@@ -1,0 +1,14 @@
+{
+  "name": "worthwatch",
+  "description": "worthwatch for Claude Code: its MCP server, and a skill that teaches Claude how to use it.",
+  "owner": {
+    "name": "Moksh Verma"
+  },
+  "plugins": [
+    {
+      "name": "worthwatch",
+      "source": "./plugins/worthwatch",
+      "description": "Checks the YouTube channels you follow and judges new videos against your own projects, through worthwatch's MCP server."
+    }
+  ]
+}
