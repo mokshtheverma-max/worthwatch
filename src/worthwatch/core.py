@@ -953,9 +953,9 @@ def run_yt_dlp(cmd, timeout=120):
                     signals=signals, stderr_tail=detail[-300:], path=",".join(paths),
                     measuring=True if _MEASURING["on"] else None)
         if _MEASURING["on"]:
-            print(f"  HTTP 429 from YouTube, inside a measurement: logged, but no strike, "
-                  f"no cap change and no new cooldown - it measures the refusal already "
-                  f"being served.")
+            print("  HTTP 429 from YouTube, inside a measurement: logged, but no strike, "
+                  "no cap change and no new cooldown - it measures the refusal already "
+                  "being served.")
         else:
             for path in paths:
                 until, wait, strikes = arm_cooldown(detail, path=path)
@@ -7055,7 +7055,7 @@ def day_table_lines(records, screen=False):
                     f"[{md_cell(record.get('title') or record['id'])}]"
                     f"({record.get('url') or ''}) | {md_cell(reason)} |")
 
-    lines = [f"## The day so far", ""]
+    lines = ["## The day so far", ""]
     if rows:
         lines.append("| Verdict | Channel | Title | Reason |")
         lines.append("|---|---|---|---|")
@@ -11935,8 +11935,8 @@ def doctor_checks(now=None):
         ok = ok and quick_ok
         detail += f"; quick jobs: {quick_brain()}: {quick_how}"
     out.append((ok, "brain", detail,
-                None if ok else f"install it, or choose another brain with `worthwatch init "
-                                f"--brain NAME` (agent, claude, codex, api, ollama)"))
+                None if ok else "install it, or choose another brain with `worthwatch init "
+                                "--brain NAME` (agent, claude, codex, api, ollama)"))
     if OPPORTUNITY_SCREEN_BACKEND == "jev":
         from . import jev as _jev
         has_key = bool((os.environ.get(_jev.KEY_ENV) or "").strip())

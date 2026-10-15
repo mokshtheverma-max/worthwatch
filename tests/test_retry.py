@@ -22,7 +22,6 @@ no model call, no clock.
 import io
 import json
 import sys
-import types
 from pathlib import Path
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")

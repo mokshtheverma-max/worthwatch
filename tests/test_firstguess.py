@@ -16,10 +16,8 @@ Everything runs in a fresh folder under the OS temp folder, with the invented ex
 person's profile. Section B counts a whole day of history.jsonl rows, invented with the shape
 of the day that set the number (see DAY_HISTORY). No YouTube request, no model call.
 """
-import datetime as dt
 import io
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -206,7 +204,7 @@ status = buf.getvalue()
 line = [l for l in status.splitlines() if "First guess" in l]
 check(len(line) == 1, f"exactly one line about it: {len(line)}")
 check("agreed 2 of 5" in line[0], f"and it is the day's number: {line[0].strip()}")
-check("week" in line[0].lower(), f"with the week beside it, which is the one that decides")
+check("week" in line[0].lower(), "with the week beside it, which is the one that decides")
 
 # ==========================================================================================
 print("\n=== E. the triage itself is untouched ===")

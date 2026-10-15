@@ -144,7 +144,7 @@ print(f"  requests: 2 listing + {triaged} metadata + {2 * (summarized + 1)} capt
 print(f"  of those, {deferred} metadata requests bought nothing: the verdict was "
       f"computed, printed, and thrown away unsaved")
 
-print(f"\n=== result ===")
+print("\n=== result ===")
 print(f"  old: ~{old_total} requests/slot at REQUEST_DELAY_SECONDS=4s between them")
 print(f"  new: ~{new_total} requests/slot at MIN_REQUEST_GAP_SECONDS="
       f"{ww.MIN_REQUEST_GAP_SECONDS:.0f}s between them")

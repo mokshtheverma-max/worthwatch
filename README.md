@@ -83,6 +83,13 @@ _Left empty for the author's own words._
    uv tool install git+https://github.com/OWNER/worthwatch
    ```
 
+   If uv warns that its tool folder is not on your PATH, run this once, then open a new terminal
+   so that the `worthwatch` command is found:
+
+   ```
+   uv tool update-shell
+   ```
+
 3. Make your folders and starter files, and choose the brain that judges the videos:
 
    ```

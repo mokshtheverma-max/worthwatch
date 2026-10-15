@@ -26,7 +26,6 @@ was not. Nothing is fetched, nothing is asked of a model, and the real pipeline 
 spy raises if anything reaches for YouTube.
 """
 import io
-import json
 import re
 import sys
 from pathlib import Path
@@ -238,7 +237,7 @@ check("A long talk on bakery bookkeeping" not in header,
 check("Nothing to keep today" in header,
       "and with its only keeper gone, this run kept nothing, which the header says")
 check("0 kept, 1 read and skipped, 1 read but not written, 1 not read, 7 waiting" in header,
-      f"the counts name what happened to all ten")
+      "the counts name what happened to all ten")
 check("NOT WRITTEN (read as YES; summary timed out after 931 s, attempt 1 of 3)" in table,
       "the table says what happened to the long talk, in one cell")
 check("NOT READ (audio 67.0 MB over the 63 MB ceiling)" in table,

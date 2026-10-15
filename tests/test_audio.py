@@ -1,7 +1,7 @@
 """The audio path: the transcript that never touches the caption endpoint. Drives the real
 request layer (run_yt_dlp, the 429 detection, the per-path cooldown, the request log) over
 a fake yt-dlp and a fake transcriber, so nothing here touches the network or the GPU."""
-import io, sys, json, subprocess, types, datetime as dt, time
+import io, sys, json, subprocess, types
 from pathlib import Path
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.path.insert(0, str(Path(__file__).resolve().parent))

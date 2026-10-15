@@ -179,7 +179,7 @@ six_hours = dict(LONG, duration=6 * 3600)
 ww.extract_media_info = lambda url: (dict(six_hours, id=ww.video_id_from_url(url)), None)
 meta, err = ww.fetch_transcript_via_audio("https://www.youtube.com/watch?v=sixhours001")
 check(meta is None and not downloads,
-      f"six hours of talk is over the ceiling even at 16 kHz mono, and nothing is downloaded")
+      "six hours of talk is over the ceiling even at 16 kHz mono, and nothing is downloaded")
 check(ww.ceiling_reason(err or "") is not None,
       f"and the row can still say why in its own words: {ww.ceiling_reason(err or '')}")
 huge = dict(LONG, formats=[dict(LONG["formats"][0], tbr=4000.0)])

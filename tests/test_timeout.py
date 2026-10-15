@@ -29,7 +29,6 @@ No YouTube request, no model call, no clock that matters: the deadline is inject
 import io
 import math
 import sys
-import time
 from pathlib import Path
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")

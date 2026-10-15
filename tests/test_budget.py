@@ -1,6 +1,6 @@
 """The adaptive daily cap in rate-state.json: a clean day raises it a little, any 429 halves
 it at once, both bounded, every change written with its reason. No network."""
-import io, sys, json, datetime as dt
+import io, sys, datetime as dt
 from pathlib import Path
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.path.insert(0, str(Path(__file__).resolve().parent))

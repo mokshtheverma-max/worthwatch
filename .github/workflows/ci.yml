@@ -1,0 +1,33 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }}, Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install worthwatch and the test tools
+        run: python -m pip install -e ".[dev]"
+      # The tests refuse every network connection and need no GPU: YouTube and every model
+      # are stubbed, and the audio path's transcriber is faked.
+      - name: Tests
+        run: python tests/run_all.py
+      - name: Lint
+        run: python -m pyflakes src scripts tests
+      - name: No em-dashes
+        run: python scripts/check_emdash.py --tree

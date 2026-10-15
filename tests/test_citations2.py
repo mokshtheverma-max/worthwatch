@@ -1,6 +1,6 @@
 """Second half of the section-6 guard tests: how section 8 follows section 6, and how the
 scoping fix behaves. Kept separate from test_citations.py only so both stay readable."""
-import io, sys, json
+import io, sys
 from pathlib import Path
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.path.insert(0, str(Path(__file__).resolve().parent))

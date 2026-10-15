@@ -61,6 +61,9 @@ check("/plugin install worthwatch --marketplace" in readme and "claude mcp add w
       "the one-step plugin install line and the MCP line are in it")
 check("free of charge" in readme.lower() and "ai.google.dev/gemini-api/docs/pricing" in readme,
       "the free Gemini tier is stated with where it was read")
+quick = readme.split("## Quickstart", 1)[-1].split("\n## ", 1)[0]
+check("uv tool update-shell" in quick and "new terminal" in quick,
+      "the quickstart says what to do when uv's tool folder is not on PATH")
 
 print("\n=== B. commands and links that exist ===")
 known = {"init", "doctor", "mcp", "status", "pause", "resume", "like", "nah", "remix",

@@ -21,7 +21,6 @@ person's profile. No YouTube request, no model call.
 """
 import datetime as dt
 import io
-import json
 import re
 import sys
 from pathlib import Path

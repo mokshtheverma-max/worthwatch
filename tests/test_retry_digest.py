@@ -16,7 +16,6 @@ person's profile. The day the video was first read is a fixed date; the retry ru
 whatever today is. No YouTube request (spies raise), no model call (the CLI is stubbed).
 """
 import io
-import re
 import sys
 from pathlib import Path
 

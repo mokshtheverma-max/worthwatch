@@ -1,7 +1,7 @@
 """Does the section-6 guard actually delete invented advice and keep real quotes?
 Uses an invented transcript (tests/fixtures/bakery-talk.txt), then replays a small invented
 history.jsonl written into the sandbox, the way the guard would meet stored summaries."""
-import io, sys, json, re
+import io, sys, json
 from pathlib import Path
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.path.insert(0, str(Path(__file__).resolve().parent))

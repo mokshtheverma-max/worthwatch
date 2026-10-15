@@ -1,5 +1,5 @@
 """Simulate the rotation state machine over several days without touching YouTube."""
-import io, sys, json, datetime as dt
+import io, sys, json
 from pathlib import Path
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.path.insert(0, str(Path(__file__).resolve().parent))
