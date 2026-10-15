@@ -21,6 +21,18 @@ Each test file is a plain script: it prints a PASS or FAIL line for every check 
 any check failed. `python tests/run_all.py doctor` runs only the files whose name has "doctor"
 in it.
 
+## Where the code lives
+
+Most of the tool is still one file, `src/worthwatch/core.py`. The checks every write-up must
+pass (the quote check, the verdict gates) are in `src/worthwatch/summaryrules.py`, and the
+settings and folders, the brains, `worthwatch init`, the MCP server, the scoring and Jev each
+have a module of their own.
+
+Moving more code out of `core.py` is welcome, with one rule: a name may move only if no test
+swaps it on core and core never rebinds it while it runs (your settings and folders are put
+into core's names when it starts). A moved function would see neither change.
+`tests/test_modules.py` checks every module split out so far; add yours to its list.
+
 ## The rules
 
 - **Test first.** Write the check that fails, see it fail, then write the fix. Never weaken,

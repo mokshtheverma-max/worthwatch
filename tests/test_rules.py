@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _tmpsandbox
 ww = _tmpsandbox.import_core()
 TMP = _tmpsandbox.sandbox(ww, "rules")
-from worthwatch import scoring
+from worthwatch import scoring, summaryrules
 
 fails = []
 
@@ -108,14 +108,14 @@ funding = ("works: raise a Series B on a recipe benchmark | for: the founders | 
 hiring = ("works: bakers hired one by one on packages from an acquisition budget | "
           "for: a big chain | evidence: claimed: $100 million offers")
 
-check(ww.opportunity_gate(summary(opportunity=real))[0],
+check(summaryrules.opportunity_gate(summary(opportunity=real))[0],
       "CONTROL: a way of getting paid with a number passes the gate")
-check(not ww.opportunity_gate(summary(opportunity=no_number))[0],
+check(not summaryrules.opportunity_gate(summary(opportunity=no_number))[0],
       "an Opportunity line with no number at all fails")
-check(not ww.opportunity_gate(summary())[0], "no Opportunity line at all fails")
+check(not summaryrules.opportunity_gate(summary())[0], "no Opportunity line at all fails")
 for what, line in (("an acquisition", acquisition), ("a funding round", funding),
                    ("a hiring war", hiring)):
-    passes, why = ww.opportunity_gate(summary(opportunity=line))
+    passes, why = summaryrules.opportunity_gate(summary(opportunity=line))
     check(not passes, f"{what} fails the gate ({why})")
 
 verdict, text, why = ww.gate_opportunity_verdict("OPPORTUNITY", summary(opportunity=acquisition))
@@ -132,7 +132,7 @@ check(ww.gate_opportunity_verdict("YES", summary())[0] == "YES",
 OPPS = {"MaraVid0011": (summary(opportunity=real), "KEEP"),
         "MaraVid0012": (summary(opportunity=acquisition), "SKIP"),
         "MaraVid0013": (summary(opportunity=funding), "SKIP")}
-_gated = {vid: ww.opportunity_gate(text) for vid, (text, _y) in OPPS.items()}
+_gated = {vid: summaryrules.opportunity_gate(text) for vid, (text, _y) in OPPS.items()}
 check(all(_gated[v][0] for v, (_t, y) in OPPS.items() if y == "KEEP"),
       "every OPPORTUNITY you keep still passes the gate")
 check(sum(1 for v in OPPS if _gated[v][0]) < len(OPPS), "and at least one you skip does not")
