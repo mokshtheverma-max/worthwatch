@@ -36,8 +36,9 @@ dependencies = [
 # Transcribing a video's audio on your own machine, for videos without captions. Downloading
 # audio may break YouTube's terms of service: it is off unless you switch it on.
 whisper = ["faster-whisper>=1.1", "av>=12"]
-# What the test suite needs beyond the package itself.
-dev = ["av>=12", "numpy", "pyflakes"]
+# What the test suite needs beyond the package itself. time-machine moves Python's clock for
+# `python tests/run_all.py --clock DAY`.
+dev = ["av>=12", "numpy", "pyflakes", "time-machine>=3.5"]
 
 [project.scripts]
 worthwatch = "worthwatch.__main__:run"

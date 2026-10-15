@@ -33,11 +33,7 @@ after the model has written it.
 
 ## Why it exists
 
-<!-- AUTHOR: write two or three sentences here, in your own words, about why you built
-worthwatch. This spot is left empty on purpose; nothing has been written for you. Delete this
-comment and the line under it when you are done. -->
-
-_Left empty for the author's own words._
+I built worthwatch for myself, to keep up with the YouTube channels I follow without watching every video. It reads each new one and tells me which are worth my time for what I'm building right now. I'm giving it away free because anyone exploring a new niche has the same problem, and you don't need a GPU to run it.
 
 ## What makes it different
 
@@ -73,14 +69,7 @@ _Left empty for the author's own words._
 2. Install worthwatch:
 
    ```
-   uv tool install worthwatch
-   ```
-
-   Until worthwatch is on PyPI, install it from GitHub instead (OWNER is the account that holds
-   this repository):
-
-   ```
-   uv tool install git+https://github.com/OWNER/worthwatch
+   uv tool install git+https://github.com/mokshtheverma-max/worthwatch
    ```
 
    If uv warns that its tool folder is not on your PATH, run this once, then open a new terminal
@@ -152,7 +141,7 @@ In Claude Code, one line installs the plugin (the MCP server and a skill that te
 use it), on Claude Code 2.1.275 or later:
 
 ```
-/plugin install worthwatch --marketplace OWNER/worthwatch
+/plugin install worthwatch --marketplace mokshtheverma-max/worthwatch
 ```
 
 Or add only the server:
@@ -183,7 +172,8 @@ says which setups were tested.
   people who made the videos.
 - It reads captions. It can also download a video's audio and transcribe it, but downloading may
   break YouTube's terms, so that is off unless you switch it on (`[transcripts] audio = true`, and
-  the whisper extra: `uv tool install --reinstall "worthwatch[whisper]"`).
+  the whisper extra:
+  `uv tool install --reinstall "worthwatch[whisper] @ git+https://github.com/mokshtheverma-max/worthwatch"`).
 - Its limits are polite and on by default. If YouTube refuses, it waits and says so; there is no
   setting to get around a refusal, on purpose.
 - Do not republish transcripts or write-ups as your own work.
@@ -197,7 +187,7 @@ says which setups were tested.
   `worthwatch init --brain claude` (or codex, api, ollama).
 - **A video has no captions:** it cannot be read without the audio path (see Responsible use).
 - **"JavaScript runtime" in the doctor:** reinstall worthwatch, which brings Deno with it:
-  `uv tool install --reinstall worthwatch`.
+  `uv tool install --reinstall git+https://github.com/mokshtheverma-max/worthwatch`.
 - **Claude Desktop cannot find `worthwatch`:** use the full path; `uv tool dir --bin` prints the
   folder it is in.
 

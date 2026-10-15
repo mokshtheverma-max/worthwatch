@@ -9,21 +9,19 @@ your agent does the judging.
 First install worthwatch and run `worthwatch init` (see the README). Every setup below starts the
 same command, `worthwatch mcp`, over stdio.
 
-In these lines, OWNER is the GitHub account that holds this repository.
-
 ## Claude Code
 
 The plugin adds the MCP server and a skill that teaches Claude how to use it:
 
 ```
-claude plugin marketplace add OWNER/worthwatch
+claude plugin marketplace add mokshtheverma-max/worthwatch
 claude plugin install worthwatch@worthwatch
 ```
 
 Inside a session, on Claude Code 2.1.275 or later, one line does both:
 
 ```
-/plugin install worthwatch --marketplace OWNER/worthwatch
+/plugin install worthwatch --marketplace mokshtheverma-max/worthwatch
 ```
 
 Or add only the MCP server (add `--scope user` to have it in every project):

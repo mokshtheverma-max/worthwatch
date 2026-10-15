@@ -27,6 +27,12 @@ jobs:
       # are stubbed, and the audio path's transcriber is faked.
       - name: Tests
         run: python tests/run_all.py
+      # The same tests with Python's clock a year and five years ahead, so a test whose fixture
+      # date will run out fails now, not on the day it runs out (tests/clock/sitecustomize.py).
+      - name: Tests, clock a year ahead
+        run: python tests/run_all.py --clock +365
+      - name: Tests, clock five years ahead
+        run: python tests/run_all.py --clock +1826
       - name: Lint
         run: python -m pyflakes src scripts tests
       - name: No em-dashes

@@ -2,7 +2,7 @@
 name: worthwatch
 description: Check the YouTube channels the user follows for new videos and judge each one against their own projects with worthwatch, then save the verdict and show the day's digest or the idea board. Use when the user asks what is new on their channels, whether a YouTube video is worth watching, for today's digest, or about their idea board.
 license: Apache-2.0
-compatibility: Needs worthwatch installed (uv tool install worthwatch) and its MCP server connected (the command worthwatch mcp).
+compatibility: Needs worthwatch installed (uv tool install git+https://github.com/mokshtheverma-max/worthwatch) and its MCP server connected (the command worthwatch mcp).
 ---
 
 # worthwatch

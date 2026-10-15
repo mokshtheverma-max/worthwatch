@@ -5,7 +5,7 @@ Thank you for helping. A few rules keep the project honest and kind to YouTube.
 ## Set up
 
 ```
-git clone https://github.com/OWNER/worthwatch
+git clone https://github.com/mokshtheverma-max/worthwatch
 cd worthwatch
 uv venv
 uv pip install -e ".[dev]"
@@ -20,6 +20,10 @@ python tests/run_all.py
 Each test file is a plain script: it prints a PASS or FAIL line for every check and exits 1 if
 any check failed. `python tests/run_all.py doctor` runs only the files whose name has "doctor"
 in it.
+
+CI also runs every test with Python's clock a year and five years ahead
+(`python tests/run_all.py --clock +365`), so a test must never give a fixture a fixed date that
+the code compares with today: count it back from today instead.
 
 ## Where the code lives
 

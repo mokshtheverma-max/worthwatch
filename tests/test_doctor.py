@@ -119,12 +119,14 @@ red_with("transcriber", "doctor_gpu",
          lambda: {"name": "Example GPU", "total_mib": 16303, "free_mib": 1200},
          "nvidia-smi", "1.2 GB free")
 red_with("transcriber", "doctor_whisper_ready",
-         lambda: (False, "faster-whisper is not installed"), "worthwatch[whisper]")
+         lambda: (False, "faster-whisper is not installed"),
+         "worthwatch[whisper] @ git+https://github.com/mokshtheverma-max/worthwatch")
 red_with("disk", "disk_free_bytes", lambda path=None: 1 * 10 ** 9, "", "1.0 GB free")
-red_with("yt-dlp", "doctor_ytdlp", lambda: None, "uv tool install --reinstall worthwatch",
-         "not installed")
+# worthwatch is not on PyPI yet, so the fix reinstalls it from its GitHub repository.
+REINSTALL = "uv tool install --reinstall git+https://github.com/mokshtheverma-max/worthwatch"
+red_with("yt-dlp", "doctor_ytdlp", lambda: None, REINSTALL, "not installed")
 red_with("YouTube challenge solver", "ejs_status",
-         lambda: (False, "yt-dlp-ejs is not installed"), "uv tool install --reinstall worthwatch")
+         lambda: (False, "yt-dlp-ejs is not installed"), REINSTALL)
 red_with("JavaScript runtime", "doctor_js_runtime",
          lambda: (False, "deno was not found"), "js_runtime", "deno")
 

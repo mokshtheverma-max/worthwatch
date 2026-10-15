@@ -45,7 +45,7 @@ api_key_env = ""
 # worthwatch reads YouTube's captions. It can also download a video's audio and transcribe it
 # on this computer, for videos without captions, but downloading may break YouTube's terms of
 # service, so that is off unless you switch it on here. It needs the whisper extra:
-# uv tool install --reinstall "worthwatch[whisper]"
+# uv tool install --reinstall "worthwatch[whisper] @ git+https://github.com/mokshtheverma-max/worthwatch"
 audio = false
 
 [jev]

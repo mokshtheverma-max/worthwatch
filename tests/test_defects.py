@@ -32,6 +32,11 @@ def check(cond, msg):
 MODE = {"429_on_caption": False, "bad_metadata_ids": set(), "recent_is_new": True,
         "captions_never_ready": False, "fetch_attempts": 0}
 TODAY = dt.date.today().strftime("%Y%m%d")
+# An older upload: too old to be new, and inside the backlog's BACKLOG_MAX_AGE_DAYS (60) window,
+# so the backlog phase still lists it. Counted back from the clock, because the fixed date this
+# used to be (20260815) left the window on 2026-10-15: D3b then crashed, and D3 passed without
+# ever seeing its Short.
+OLDER = (dt.date.today() - dt.timedelta(days=30)).strftime("%Y%m%d")
 
 def fake_run(cmd, timeout=120):
     tail = cmd[-1]
@@ -49,7 +54,7 @@ def fake_run(cmd, timeout=120):
                 "id": f"v{ch}{i:02d}abcdef"[:11],
                 "title": "Quick clip" if short else f"c{ch} real video {i}",
                 "duration": 60 if short else 900,
-                "upload_date": "20260815" if end > 100 or not MODE["recent_is_new"] else TODAY,
+                "upload_date": OLDER if end > 100 or not MODE["recent_is_new"] else TODAY,
             }))
         return subprocess.CompletedProcess(cmd, 0, "\n".join(vids), "")
     if "--write-sub" in cmd:
@@ -127,6 +132,9 @@ for run in range(1, 16):
           f"stalls={st.get('stalls')} backfilled={st.get('backfilled')}")
     if st.get("backfilled"): break
 bl = json.loads(ww.BACKLOG_PATH.read_text())
+check(bl[CH[0]].get("total_2026_known", 0) > 0,
+      f"the backlog saw @ch01's older videos, so D3 is not passing on an empty window "
+      f"({bl[CH[0]].get('total_2026_known')} of them)")
 check(bl[CH[0]]["backfilled"] is True,
       "@ch01 eventually reports backfilled despite an unprocessable Short")
 check(bl[CH[0]]["remaining"] == 0,

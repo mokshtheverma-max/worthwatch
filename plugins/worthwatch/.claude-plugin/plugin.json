@@ -2,7 +2,7 @@
   "name": "worthwatch",
   "displayName": "worthwatch",
   "version": "0.1.0",
-  "description": "Checks the YouTube channels you follow and judges new videos against your own projects. Adds worthwatch's MCP server and a skill for using it. Needs worthwatch installed: uv tool install worthwatch",
+  "description": "Checks the YouTube channels you follow and judges new videos against your own projects. Adds worthwatch's MCP server and a skill for using it. Needs worthwatch installed: uv tool install git+https://github.com/mokshtheverma-max/worthwatch",
   "author": {
     "name": "Moksh Verma"
   },

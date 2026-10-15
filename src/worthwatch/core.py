@@ -196,7 +196,9 @@ AUDIO_PATH_ENABLED = False
 AUDIO_TERMS_WARNING = ("Downloading a video's audio may break YouTube's terms of service. "
                        "worthwatch does it only because you switched it on ([transcripts] audio "
                        "= true in settings.toml); switch it off to use captions alone.")
-WHISPER_EXTRA_FIX = "uv tool install --reinstall \"worthwatch[whisper]\""
+# worthwatch is not on PyPI yet, so every install line takes it from its GitHub repository.
+WHISPER_EXTRA_FIX = ("uv tool install --reinstall "
+                     "\"worthwatch[whisper] @ git+https://github.com/mokshtheverma-max/worthwatch\"")
 
 
 def whisper_installed():
@@ -11428,7 +11430,8 @@ BRAIN = "agent"
 # The first lines of the example person's context file say this; a context file that still
 # does is not the reader's own yet.
 EXAMPLE_CONTEXT_MARKER = "> EXAMPLE."
-REINSTALL_FIX = "uv tool install --reinstall worthwatch   (or pip install --upgrade worthwatch)"
+REINSTALL_FIX = ("uv tool install --reinstall git+https://github.com/mokshtheverma-max/worthwatch"
+                 "   (or pip install --upgrade git+https://github.com/mokshtheverma-max/worthwatch)")
 
 
 def doctor_ytdlp():
@@ -11576,8 +11579,7 @@ def doctor_checks(now=None):
         gpu = doctor_gpu() if ready else None
         if not ready:
             out.append((False, "transcriber", what,
-                        "uv tool install --reinstall 'worthwatch[whisper]'   (or switch the "
-                        "audio path off)"))
+                        WHISPER_EXTRA_FIX + "   (or switch the audio path off)"))
         elif gpu is None:
             out.append((True, "transcriber", f"{what}; no NVIDIA GPU answered, so it runs on "
                         f"the CPU, slowly", None))

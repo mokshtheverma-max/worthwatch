@@ -2,11 +2,14 @@
 
 README.md has every section the project promised: what it is in two lines, a sample digest,
 what makes it different, a quickstart, brains free first, use from an AI agent, privacy,
-responsible use, troubleshooting, and a marked spot for the author's own words that is left
-empty for him to fill. Every `worthwatch` command the README or the other documents give is one
+responsible use, troubleshooting, and a spot for the author's own words (marked and left empty
+until he writes them). Every `worthwatch` command the README or the other documents give is one
 the command line knows, every local link points at a file that exists, and the sample digest in
 examples/ is exactly what the code makes today (scripts/make_sample_digest.py, run here again).
 LICENSE is the Apache-2.0 text; CONTRIBUTING, SECURITY, CHANGELOG and the issue templates exist.
+Every line, in any file outside tests/, that installs or upgrades worthwatch takes it from its
+GitHub repository, because it is not on PyPI yet, and every link to the repository names the
+real account.
 
 No YouTube request, no model call.
 
@@ -105,6 +108,31 @@ check("Report a vulnerability" in (DIR / "SECURITY.md").read_text(encoding="utf-
       "SECURITY.md says how to report privately")
 bug = (DIR / ".github" / "ISSUE_TEMPLATE" / "bug_report.md").read_text(encoding="utf-8")
 check("context file" in bug and "key" in bug, "the bug template warns not to paste a context file or a key")
+
+print("\n=== E. install lines and the repository's account ===")
+# worthwatch is not on PyPI yet, and anyone could register the name there, so a line that
+# installs or upgrades it by name could hand a reader a stranger's package. Until the first PyPI
+# release every such line names the GitHub repository. Switch this the day it is on PyPI.
+ACCOUNT = "mokshtheverma-max"
+REPO = f"git+https://github.com/{ACCOUNT}/worthwatch"
+INSTALL = re.compile(r"(?:uv tool (?:install|upgrade)|uvx|pipx? install)\b[^`()\n]*")
+SOURCE = re.compile(r"(?:github\.com/|--marketplace |marketplace add )([\w.-]+)/worthwatch")
+by_name, wrong_account = [], []
+for root, dirs, names in __import__("os").walk(DIR):
+    dirs[:] = [d for d in dirs if d not in {".git", ".venv", "venv", "build", "dist",
+                                             "__pycache__", "tests"}]
+    for name in names:
+        if not name.endswith((".md", ".py", ".toml", ".json", ".yml", ".txt")):
+            continue
+        path = Path(root) / name
+        where = path.relative_to(DIR).as_posix()
+        for n, text in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            by_name += [f"{where}:{n}" for cmd in INSTALL.findall(text)
+                        if "worthwatch" in cmd and REPO not in cmd]
+            wrong_account += [f"{where}:{n}" for acct in SOURCE.findall(text) if acct != ACCOUNT]
+check(not by_name, f"no line installs or upgrades worthwatch by name ({by_name[:5] or 'none'})")
+check(f"uv tool install {REPO}" in quick, "the quickstart installs it from GitHub")
+check(not wrong_account, f"every link to the repository names {ACCOUNT} ({wrong_account[:5] or 'all'})")
 
 print("\n" + ("ALL PASS" if not fails else f"{len(fails)} FAILURES: " + "; ".join(fails)))
 sys.exit(1 if fails else 0)
