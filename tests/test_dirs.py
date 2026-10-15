@@ -14,12 +14,14 @@ in a copy of src/worthwatch/settings.py and run this file against the copy.
 """
 import io
 import sys
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import Path
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import _tmpsandbox  # noqa: F401 - puts src/ on the path and refuses the network
+import _tmpsandbox  # puts src/ on the path and refuses the network
 from worthwatch import settings as s
+
+assert _tmpsandbox.SRC.is_dir()
 
 fails = []
 

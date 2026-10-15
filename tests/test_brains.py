@@ -24,7 +24,6 @@ src/worthwatch/core.py and run this file against the copy.
 """
 import io
 import json
-import os
 import subprocess
 import sys
 import types
@@ -108,6 +107,25 @@ ww.BRAIN = "api"
 ww.API.update(provider="gemini", base_url="", key_env="")
 check(ww.write_label().startswith("api:gemini/"), f"api: {ww.write_label()}")
 ww.BRAIN, ww.QUICK_BRAIN = "claude", "ollama"
+
+print("\n=== B2. a write-up from the writing brain keeps its judgment, whichever brain it is ===")
+# A small local model's write-up has sections 6 to 8 blanked on purpose (it was measured
+# inventing what applies). That must follow the job, not the word "claude" in a label.
+SIX = ("## 1. What it is\nA talk.\n\n## 6. What applies to me\n\nMost applicable: \"a quote\" - "
+       "do the thing. Applies to: Ledgerleaf\n\n## 7. What contradicts what I believe\n\nnothing in "
+       "this video touches the beliefs list\n\n## 8. Try this week\n\nDo the thing.\n")
+for kind, label in (("codex", "codex"), ("api", None), ("claude", "claude:sonnet"),
+                    ("ollama", None)):
+    ww.BRAIN, ww.QUICK_BRAIN = kind, ""
+    ww.API.update(provider="gemini", base_url="", key_env="")
+    label = label or ww.write_label()
+    check(ww.writes_judgment(label), f"{kind} writing ({label}): its judgment is kept")
+ww.BRAIN = "claude"
+check(ww.writes_judgment("agent"), "your agent's write-up keeps its judgment")
+ww.BRAIN, ww.QUICK_BRAIN = "claude", "ollama"
+check(not ww.writes_judgment(ww.quick_label("m:1b")),
+      "CONTROL: a local quick brain's write-up, while claude writes, is blanked as before")
+ww.API.update(provider="", base_url="", key_env="")
 
 print("\n=== C. codex exec, exactly as its documentation says ===")
 seen = {}

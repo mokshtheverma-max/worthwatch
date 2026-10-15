@@ -28,6 +28,8 @@ dependencies = [
     # yt-dlp reads YouTube. Its "default" extra brings yt-dlp-ejs, which its README says YouTube
     # needs, and its "deno" extra brings Deno, the JavaScript runtime its README recommends.
     "yt-dlp[default,deno]>=2026.7.4",
+    # The official MCP Python SDK, for `worthwatch mcp`.
+    "mcp>=2.3,<3",
 ]
 
 [project.optional-dependencies]

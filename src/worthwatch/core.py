@@ -2627,6 +2627,15 @@ def write_label():
     return brain_label(BRAIN, "write")
 
 
+def writes_judgment(backend):
+    """True when a write-up came from the writing brain (or your agent), whose sections 6 to 8
+    are kept. A local quick brain's are blanked (local_judgment_unavailable), because a small
+    local model was measured inventing what applies; that follows the job, not the word
+    "claude" in a label."""
+    label = str(backend or "")
+    return label.startswith("claude") or label == "agent" or label == write_label()
+
+
 def quick_label(model=None):
     return brain_label(quick_brain(), "quick", model)
 
@@ -5498,8 +5507,38 @@ def triage_excerpt(transcript, limit=None):
 TRIAGE_MIN_TIMEOUT = 30    # seconds a triage may always have, even at the run's deadline
 
 
+def triage_prompt(context_text, channel_name, details, sells_something=None):
+    """The triage prompt for one video, from its listing or, when `details` carries one, from
+    its transcript. The quick brain answers it in triage_video; an agent is handed it by the
+    MCP server's judge_video, so both judge by the same rules."""
+    duration = details.get("duration")
+    duration_str = f"{int(duration) // 60}m{int(duration) % 60:02d}s" if duration else "UNKNOWN"
+    sales_note = SALES_NOTE_KNOWN if sells_something else SALES_NOTE_UNKNOWN
+    transcript = details.get("transcript")
+    if transcript:
+        evidence_block = ("=== TRANSCRIPT (machine transcription: names may be misspelt) ===\n"
+                          f"{triage_excerpt(transcript)}\n=== END TRANSCRIPT ===")
+        # The listing's verdict is deliberately NOT in this prompt: given it, the model
+        # anchored on it (the same transcript read YES under a MAYBE prior and NO under a NO
+        # prior, 2026-09-07). The code keeps it for the digest; the model gets the evidence.
+        stage_note = TRIAGE_STAGE_TRANSCRIPT
+    else:
+        evidence_block = (f"DESCRIPTION: {(details.get('description') or 'UNKNOWN')[:800]}\n\n"
+                          "(The description is whatever the channel listing or feed exposes: "
+                          "often the first sentence or two, sometimes nothing. Judge from what "
+                          "is there.)")
+        stage_note = TRIAGE_STAGE_LISTING
+    return TRIAGE_INSTRUCTIONS.format(
+        reader=READER, project_list=project_list_words(),
+        context=context_for_triage(context_text), channel=channel_name, title=details["title"],
+        duration=duration_str, upload_date=details.get("upload_date") or "UNKNOWN",
+        evidence_block=evidence_block, sales_note=sales_note,
+        already_block=already_in_my_files(), stage_note=stage_note,
+    )
+
+
 def triage_video(context_text, channel_name, details, model, sells_something=None):
-    """One verdict from the local model: (verdict, reason, confidence).
+    """One verdict from the quick brain: (verdict, reason, confidence).
 
     The third value arrived 2026-09-20 and the shape of the return changed with it rather
     than the number being smuggled inside the reason string. A caller that unpacks two values
@@ -5516,38 +5555,14 @@ def triage_video(context_text, channel_name, details, model, sells_something=Non
     all, and a title like "I had five models build me the same app" says nothing about the
     blind judging setup inside it. One prompt serves both moments, so the rubric cannot
     drift between them."""
-    duration = details.get("duration")
-    duration_str = f"{int(duration) // 60}m{int(duration) % 60:02d}s" if duration else "UNKNOWN"
-    sales_note = SALES_NOTE_KNOWN if sells_something else SALES_NOTE_UNKNOWN
-    transcript = details.get("transcript")
-    if transcript:
-        evidence_block = ("=== TRANSCRIPT (machine transcription: names may be misspelt) ===\n"
-                          f"{triage_excerpt(transcript)}\n=== END TRANSCRIPT ===")
-        # The listing's verdict is deliberately NOT in this prompt: given it, the model
-        # anchored on it (the same transcript read YES under a MAYBE prior and NO under a NO
-        # prior, 2026-09-07). The code keeps it for the digest; the model gets the evidence.
-        stage_note = TRIAGE_STAGE_TRANSCRIPT
-        timeout = 600
-    else:
-        evidence_block = (f"DESCRIPTION: {(details.get('description') or 'UNKNOWN')[:800]}\n\n"
-                          "(The description is whatever the channel listing or feed exposes: "
-                          "often the first sentence or two, sometimes nothing. Judge from what "
-                          "is there.)")
-        stage_note = TRIAGE_STAGE_LISTING
-        timeout = 120
+    timeout = 600 if details.get("transcript") else 120
     # 2026-09-26 night, brief part 2.1: a hung model waits no longer than the run has left,
     # with a floor so a call near the deadline can still answer. A 600 s transcript triage used
     # to run on past the deadline that every summary respects.
     left = run_seconds_left()
     if left is not None:
         timeout = max(TRIAGE_MIN_TIMEOUT, min(timeout, left))
-    prompt = TRIAGE_INSTRUCTIONS.format(
-        reader=READER, project_list=project_list_words(),
-        context=context_for_triage(context_text), channel=channel_name, title=details["title"],
-        duration=duration_str, upload_date=details.get("upload_date") or "UNKNOWN",
-        evidence_block=evidence_block, sales_note=sales_note,
-        already_block=already_in_my_files(), stage_note=stage_note,
-    )
+    prompt = triage_prompt(context_text, channel_name, details, sells_something)
     # num_predict caps worst-case generation length for what should be a two-line
     # answer: a model that fails to stop naturally should hit this, not run away.
     response = quick_generate(prompt, model=model, num_ctx=NUM_CTX, timeout=timeout,
@@ -7654,7 +7669,7 @@ def write_digest(pass_rows, no_entries, summaries, gave_up=None, label=None):
             # Say why a summary went local; a Sonnet summary needs no note. DECISION A,
             # 2026-09-25: and no "the listing said" note, for the reason the table has none.
             notes = []
-            if s.get("backend_why") and not str(s["backend"]).startswith("claude"):
+            if s.get("backend_why") and not writes_judgment(s["backend"]):
                 notes.append(s["backend_why"])
             if notes:
                 lines.append(f"*{'; '.join(notes)}.*\n")
@@ -11298,7 +11313,7 @@ def finalize_summary(summary_text, transcript_text, model=None, verdict=None,
     shape the judgment sections are set to "nothing" - which is the honest reading of a
     model that cannot say what applies without narrating its own deliberation."""
     text = normalize_punct(summary_text)
-    if backend and not str(backend).startswith("claude"):
+    if backend and not writes_judgment(backend):
         # No re-ask and no guards to run on sections that are about to be blank; a local
         # summary is sections 1 to 5 and nothing else.
         text, _ = clean_summary(text, transcript_text, model, verdict, meta)
@@ -12157,6 +12172,17 @@ def main():
         except _settings.SettingsError as e:
             print(f"STOPPED: {e}")
             sys.exit(2)
+    if sys.argv[1:2] == ["mcp"]:
+        # The MCP server speaks its protocol on standard output, so anything it has to say
+        # before it starts goes to standard error.
+        try:
+            configure()
+        except _settings.SettingsError as e:
+            print(f"STOPPED: {e}", file=sys.stderr)
+            sys.exit(2)
+        from . import mcpserver
+        mcpserver.serve()
+        return
     try:
         configure()
     except _settings.SettingsError as e:
@@ -12195,6 +12221,7 @@ def main():
         epilog="commands:\n"
                "  worthwatch init      make the folders and starter files, choose a brain\n"
                "  worthwatch doctor    check everything a run needs, in plain words (read only)\n"
+               "  worthwatch mcp       serve worthwatch's tools to your AI agent, over stdio\n"
                "  worthwatch status    what the tool is doing and waiting for\n"
                "  worthwatch pause | resume   stop or restart the runs\n"
                "  worthwatch like | nah ID    tell the idea board what you think of an idea\n"
