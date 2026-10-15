@@ -1,0 +1,6 @@
+# Every text file is stored with LF line endings, whatever the checkout's platform.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ogg binary
+*.mp4 binary

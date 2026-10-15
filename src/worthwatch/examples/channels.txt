@@ -1,0 +1,4 @@
+# The channels worthwatch checks for new videos, one channel URL per line.
+# Lines that start with # are ignored. For example:
+#   https://www.youtube.com/@SomeChannel
+# A channel named in settings.toml's [channels] priority is read first in every run.

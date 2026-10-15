@@ -1,0 +1,165 @@
+# The example person's own rules. Mara Quinn is invented; `worthwatch init` copies this file
+# into your config folder, where you replace her rules with yours.
+#
+# worthwatch checks every finished write-up against these, in code, after the model has written
+# it: a prompt alone is a request, and these are not. Each rule's name should be a phrase from
+# your context file, so a demoted row points at a sentence you can find there.
+#
+# `pattern` is optional. Without one, the rule's name is matched as a phrase (whole words, any
+# case). With one, it is a Python regular expression, matched in any case; `patterns` is a list
+# of them, any one of which matches. Write patterns between ''' marks so backslashes and
+# quotes need no escaping.
+
+# --- standing decisions -----------------------------------------------------------------------
+# A "Try this week" line that breaks one is replaced by "Not tried: contradicts a standing
+# decision (its name)", and a YES whose action breaks one becomes MAYBE. The first match wins.
+# `unless`: a pattern that makes the line fine after all. `only`: the projects it holds for.
+# `exempt`: projects it does not hold for.
+
+[[decision]]
+name = "no paid ads"
+pattern = '''\b(google\s+ads?|adwords|meta\s+ads?|facebook\s+ads?|instagram\s+ads?|tiktok\s+ads?|paid\s+(?:ads?|social|traffic|media)|ad\s*set\b|ad\s+campaign|smart\s+bidding|ppc\b|boost(?:ed)?\s+(?:a\s+)?post)\b'''
+
+[[decision]]
+name = "cold email is closed as a first move"
+pattern = '''\b(cold[\s-]?(?:email|call|dm|outreach|list)s?|(?:email|call)\s+(?:a|the)\s+list|scrape\s+a\s+list|buy\s+a\s+list)\b'''
+unless = '''\bfollow[\s-]?ups?\b'''
+
+[[decision]]
+name = "no page trackers, ever"
+# Plausible, Fathom and Amplitude are trackers and also ordinary words: they count only when
+# named as one (with "analytics", as a web address, or capitalised mid-sentence). A heat map
+# counts only as a map of what visitors do on a page; a chip's congestion heat map does not.
+patterns = [
+  '''\b(google\s+analytics|ga4|posthog|mixpanel|(?:amplitude|plausible|fathom)(?:\.(?:io|com)|\s+analytics)|(?-i:(?<=[a-z0-9,]\s)(?:Amplitude|Plausible|Fathom))|hotjar|session\s+record\w*|tracking\s+pixel|meta\s+pixel|vercel\s+(?:web\s+)?analytics|page[\s-]?view\s+track\w*|analytics\s+(?:tool|script|tag))\b''',
+  '''\b(?:click(?:s|ed|ing)?|scroll\w*|taps?|mouse|cursors?|visitors?|users?|browsing)\b[^.]{0,60}?\bheat[\s-]?map(?:s|ping)?\b''',
+  '''\bheat[\s-]?map(?:s|ping)?\b[^.]{0,60}?\b(?:click(?:s|ed|ing)?|scroll\w*|taps?|mouse|cursors?|visitors?|users?|browsing)\b''',
+  '''\b(?:web|web[\s-]?sites?|sites?|landing[\s-]pages?|home[\s-]?pages?|[\w-]+\.(?:com|tech|io|app|dev|org|net|ai))(?:'s)?[\s-]+heat[\s-]?map(?:s|ping)?\b''',
+  '''\bheat[\s-]?map(?:s|ping)?\s+(?:on|of|for|to|across)\s+(?:(?:the|a|an|your|my|our|its|every|each)\s+)?(?:(?-i:[A-Z])[\w'-]*\s+)?(?:pages?|web[\s-]?sites?|sites?|landing[\s-]pages?|home[\s-]?pages?|[\w-]+\.(?:com|tech|io|app|dev|org|net|ai))\b''',
+  '''\bheat[\s-]?map(?:s|ping)?[\s-]+(?:tracking|trackers?|scripts?|snippets?|plugins?)\b''',
+]
+
+[[decision]]
+name = "never hold customer money"
+pattern = '''\b(?:escrow|holding\s+(?:client|customer|other\s+people'?s)\s+(?:money|funds)|payment\s+rails?|money\s+transmi\w+|rent\s+collection)\b'''
+
+[[decision]]
+name = "never promise tax advice"
+pattern = '''\b(?:tax\s+advice|file\s+(?:your|their|the)\s+(?:taxes|tax\s+returns?)|tax[\s-]filing\s+service)\b'''
+
+[[decision]]
+name = "no free plan on ledgerleaf"
+only = ["Ledgerleaf"]
+pattern = '''\b(?:announce|advertise|promote|market|headline)\b[^.]{0,30}\bfree\b|\bfree\s+(?:tier|plan|trial|forever)\b|"free\s+to\s+start'''
+
+[[decision]]
+name = "nothing new is priced without a test first"
+exempt = ["Tidepool"]
+# Only a NEW price counts: a tier, a plan, a paywall, or "a" or "a new" price. Publishing the
+# price that already exists is the done rule below, so "the price" and "pricing page" are not here.
+patterns = [
+  '''\b(?:set|publish|announce|add|introduce|launch|put\s+up|list)\b[^.]{0,40}\b(?:tiers?|paywall|subscriptions?|plans?)\b''',
+  '''\b(?:set|publish|announce|add|introduce|launch|put\s+up|list)\b[^.]{0,40}\b(?:a|an|new|second|another|annual|written|monthly|yearly|higher|lower)\s+(?:[\w-]+\s+)?price\b''',
+  '''\b(?:set|put)\s+the\s+(?:[\w-]+\s+)?price\s+at\b|\bprice\s+it\s+at\b|\bcharge\s+\$?\d|\bpricing\s+tiers?\b|\btiered\s+pric\w*''',
+]
+
+[[decision]]
+name = "no dark patterns"
+pattern = '''\b(countdowns?\s+timer|fake\s+scarcity|seeded\s+(?:comments?|reviews?)|bought\s+(?:followers|reviews?)|paid\s+backlinks?|urgency\s+timer)\b'''
+
+[[decision]]
+name = "no app stores for a web product"
+pattern = '''\b(app\s+store|play\s+store|ios\s+app|android\s+app|testflight)\b'''
+
+[[decision]]
+name = "killed products are not re-suggested"
+# The checklist is alive as a way of working and dead as a product, so only building or selling
+# one counts: "write a checklist for Monday" is fine.
+pattern = '''\b(dog[\s-]?walking\s+apps?|recipe\s+(?:subscription\s+)?box|crypto\s+tipping)\b|\b(?:build|ship|start|launch|publish|open[\s-]?source|sell|market|distribute)\b[^.]{0,40}\b(?:checklist\s+app|habit[\s-]?tracker)\b'''
+
+[[decision]]
+name = "one coding agent at a time"
+pattern = '''\b(agent\s+teams?)\b|\bparallel\s+(?:[\w-]+\s+){0,2}?(?:sub-?\s?agents?|(?:claude\s+code|coding)\s+(?:agents|sessions|instances))\b|\bsub-?\s?agents?\b[^.]{0,80}\bin\s+parallel\b|\b(?:two|three|four|five|several|multiple|many)\s+(?:parallel\s+)?(?:claude\s+code|coding)\s+(?:agents|sessions|instances)\b|\beach\s+(?:claude\s+code|coding)\s+agent\b|\bmulti-?agent\b|\bagent\s+swarms?\b|\bspawn\w*\b[^.]{0,30}\bsub-?\s?agents\b|\bworktrees?\b[^.]{0,80}\b(?:parallel|at\s+once|side\s+by\s+side)\b|\b(?:parallel|at\s+once|side\s+by\s+side)\b[^.]{0,80}\bworktrees?\b'''
+
+[[decision]]
+name = "never guess an email address"
+pattern = '''\bconstruct\w*\s+(?:an?\s+)?(?:email\s+)?address\b|\bguess\w*\b[^.]{0,24}\b(?:name|address|email)\b'''
+
+# --- already done or decided ------------------------------------------------------------------
+# A YES whose action repeats one of these becomes MAYBE. `project`: the one project it is about.
+
+[[done]]
+name = "the ledgerleaf price page is already live"
+project = "Ledgerleaf"
+# Building or publishing the page again counts; checking or reading the live page does not.
+pattern = '''\b(?:build|make|create|publish|launch|ship|put|add|set\s+up|write)\w*\b[^.]{0,30}\bpric(?:e|ing)\s+page\b|\bpublish\w*\s+(?:a\s+|the\s+)?price\b'''
+
+[[done]]
+name = "the tidepool referral program already ran"
+project = "Tidepool"
+pattern = '''\breferral\s+(?:program|scheme|campaign)s?\b'''
+
+[[done]]
+name = "a product hunt launch"
+pattern = '''\bproduct\s+hunt\b'''
+
+# --- generic advice ---------------------------------------------------------------------------
+# Advice anyone could have given without the video is never a YES.
+
+[[generic]]
+name = "the outcome, not the features"
+pattern = '''\b(?:outcomes?|benefits?|results?|future)\s*,?\s+not\s+(?:the\s+)?(?:features?|mechanism|technology|tech)\b|\bnot\s+(?:the\s+)?features\b|\bsell(?:ing)?\s+the\s+sizzle\b'''
+
+[[generic]]
+name = "an effort level or a cheaper model for running an agent"
+project = "how I work"
+pattern = '''\b(?:low|medium|high|max|extra)\s+effort\b|\beffort\s+levels?\b|\b(?:cheap(?:er|est)?|smaller|lighter|less\s+expensive)\s+(?:claude\s+)?(?:models?|one)\b|\bmodel\s+(?:tiers?|routing)\b|\bstrongest\s+model\b'''
+
+# --- parts of how you work --------------------------------------------------------------------
+# A YES under the work label has to name one of these, or it is a general tip and becomes MAYBE.
+
+[[work]]
+name = "a short plan before i start"
+pattern = '''\b(?:short|written)\s+plan\b|\bplan\s+before\b'''
+
+[[work]]
+name = "a checklist for the morning"
+pattern = '''\bchecklists?\b'''
+
+[[work]]
+name = "release notes for every change"
+pattern = '''\brelease\s+notes?\b|\bchangelog\b'''
+
+[[work]]
+name = "one notes file per project"
+pattern = '''\bnotes\s+files?\b'''
+
+[[work]]
+name = "one coding agent at a time"
+pattern = '''\bone\s+(?:coding\s+)?agent\b'''
+
+# --- ideas you killed -------------------------------------------------------------------------
+# Never surfaced as a new opportunity or idea; a video that raises one again is one line, "seen
+# before", unless it brings new evidence against the reason it was killed.
+
+[[killed]]
+name = "dog-walking apps"
+pattern = '''\bdog[\s-]?walk\w*'''
+date = "2 March 2026"
+because = "three free apps already do it well"
+
+[[killed]]
+name = "a recipe subscription box"
+pattern = '''\brecipe\s+(?:subscription\s+)?box\w*|\bmeal[\s-]?kits?\b'''
+date = "19 May 2026"
+because = "it needs a kitchen and shipping, and I want software"
+
+[[killed]]
+name = "crypto tipping for creators"
+pattern = '''\bcrypto\w*\s+tip\w*|\btip\w*\s+(?:in|with)\s+crypto\w*'''
+date = "30 June 2026"
+because = "the payment rules are too much for one person"
+
+[[killed]]
+name = "a checklist app"
+pattern = '''\b(?:checklist|habit[\s-]?tracker)\s+apps?\b'''

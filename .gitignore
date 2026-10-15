@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Your own worthwatch folders, if you point them inside a checkout. They hold your context
+# file, your digests and your transcripts: never commit them.
+/worthwatch-home/
+/data/
+/output/
+*.local.toml
+
+# Secrets never go in the repository; keys come from your environment.
+.env
+.env.*
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

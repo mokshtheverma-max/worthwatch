@@ -1,0 +1,9 @@
+# Searches `worthwatch --topics` runs, one per line. Lines that start with # are ignored.
+# "query | needs: word, word" keeps only results whose title, channel or description carries
+# at least one of those words, which drops songs, playlists and the like before any model call.
+bookkeeping software for small bakeries | needs: bakery, bakeries, bookkeeping
+newsletter sponsorship pricing | needs: newsletter, sponsor, sponsorship
+how solo founders got their first paying customer
+indie game marketing on a small budget | needs: indie, game, games
+# retired: a search that kept nothing for two weeks stays here as a comment, with why.
+# podcast growth hacks (retired: nothing it found was kept)

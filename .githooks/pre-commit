@@ -1,0 +1,6 @@
+#!/bin/sh
+# Blocks a commit that adds an em-dash (U+2014) to any text file. Turn it on once with:
+#   git config core.hooksPath .githooks
+set -e
+if python -c "" >/dev/null 2>&1; then PY=python; else PY=python3; fi
+"$PY" scripts/check_emdash.py --staged

@@ -1,0 +1,46 @@
+# worthwatch settings for the example person, Mara Quinn. She is invented.
+# `worthwatch init` copies this file into your config folder: change it to describe you.
+# Every key is optional; delete a line and its default comes back.
+
+[you]
+# How the prompts address you. Empty means "you".
+name = "Mara"
+# Your live projects, as you name them in your context file. A write-up's "What applies to me"
+# item has to name exactly one of these (or the work label, or "this tool"), or it is cut.
+projects = ["Ledgerleaf", "Tidepool"]
+# The label for a change to how you work. Empty turns it off.
+work_label = "how I work"
+# At most this many keeps a day under the work label; the rest become MAYBE.
+work_label_daily_cap = 3
+# Other ways a write-up may name a project, in lower case.
+aliases = { "ledger leaf" = "Ledgerleaf", "the newsletter" = "Tidepool" }
+# Names that are never a project (yours, and anyone in your context file).
+people = ["Mara", "Mara Quinn"]
+# Things you already have that an idea could be carried onto.
+assets = ["Ledgerleaf's bank-export parser", "the Tidepool mailing list"]
+# A word to mark anything that needs someone else's signature (for example "SIGN" when an adult
+# signs for you). Empty turns it off.
+sign_word = ""
+
+[channels]
+# Channels read first in every run, from your channels.txt, never capped. Full URLs.
+priority = []
+priority_daily_reserve = 3
+daily_cap_per_channel = 3
+
+[topics]
+# A video outside the length window is still read when its title has one of these.
+on_topic_keywords = ["bookkeeping", "bakery", "newsletter", "indie game", "solo founder",
+                     "saas", "pricing", "customer discovery"]
+# A video whose title or description has one of these is never written up by a local model.
+technical_keywords = ["mcp", "model context protocol", "coding agent", "ai agent", "llm eval"]
+
+[discover]
+# Searches `worthwatch --discover` runs to propose new channels.
+queries = ["founder interview revenue numbers", "bootstrapped saas founder interview",
+           "newsletter sponsorship pricing"]
+candidates = []
+
+[whisper]
+# Words the optional transcriber should expect (worthwatch[whisper] only).
+vocabulary = "Terms that come up: SaaS, MRR, ARR, API, CLI, newsletter, sponsorship, bookkeeping."
