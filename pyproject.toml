@@ -46,4 +46,6 @@ worthwatch = "worthwatch.__main__:run"
 packages = ["src/worthwatch"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "tests", "scripts", "README.md", "LICENSE", "pyproject.toml"]
+include = ["src", "tests", "scripts", "docs", "examples", "plugins", ".claude-plugin", ".agents",
+           ".githooks", ".github", "README.md", "LICENSE", "CONTRIBUTING.md", "SECURITY.md",
+           "CHANGELOG.md", "pyproject.toml"]
