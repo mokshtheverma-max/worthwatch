@@ -28,6 +28,32 @@ sign_word = ""
 # API whose key is in GEMINI_API_KEY, OPENROUTER_API_KEY, OPENAI_API_KEY or GROQ_API_KEY) or
 # "ollama" (a local model). `worthwatch init --brain NAME` changes it.
 kind = "agent"
+# A different brain for the quick jobs (sorting a listing, the first look at a transcript), if
+# you want one: for example "ollama" for a free local model and kind = "claude" to write.
+quick = ""
+# The models to ask, if not each brain's own default.
+model = ""
+quick_model = ""
+# For "api": which service ("gemini", "openrouter", "openai" or "groq"); empty takes the first
+# whose key is set. For any other OpenAI-compatible service, set base_url, the name of the
+# environment variable that holds its key in api_key_env, and model.
+provider = ""
+base_url = ""
+api_key_env = ""
+
+[transcripts]
+# worthwatch reads YouTube's captions. It can also download a video's audio and transcribe it
+# on this computer, for videos without captions, but downloading may break YouTube's terms of
+# service, so that is off unless you switch it on here. It needs the whisper extra:
+# uv tool install --reinstall "worthwatch[whisper]"
+audio = false
+
+[jev]
+# Jev, a small paid model on OpenRouter, can screen videos for business opportunities. Off unless
+# switched on; its key comes from the OPENROUTER_API_KEY environment variable, and it never
+# spends more than daily_cap_usd a day (at most 5.00).
+enabled = false
+daily_cap_usd = 1.00
 
 [channels]
 # Channels read first in every run, from your channels.txt, never capped. Full URLs.

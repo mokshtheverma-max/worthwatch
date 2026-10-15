@@ -710,6 +710,9 @@ def audio_path_with(text):
 
 
 texts = fetch_text({"emptyvid001": None, "unreadable1": UNREADABLE})
+# The looping video comes through the real audio fetch, which ships switched off; switched on
+# here the way a user switches it on ([transcripts] audio = true).
+ww.AUDIO_PATH_ENABLED = True
 through_audio = audio_path_with(LOOP)
 ww.fetch_transcript_by_plan = lambda url, plan=None: (
     through_audio(url) if "loopvid0001" in url else texts(url, plan))

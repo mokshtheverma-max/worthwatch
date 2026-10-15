@@ -137,6 +137,32 @@ ok, detail, fix = line(ww.doctor_checks(now=NOW), "brain")
 check(ok and "mcp" in detail.lower(), f"agent mode needs no model, and says how to connect ({detail})")
 ww.BRAIN = "claude"
 
+print("\n  only what this setup uses")
+saved_quick = ww.QUICK_BRAIN
+ww.BRAIN, ww.QUICK_BRAIN = "claude", ""
+check("Ollama" not in [c[1] for c in ww.doctor_checks(now=NOW)],
+      "with no local model in the setup there is no Ollama line")
+ww.QUICK_BRAIN = "ollama"
+check("Ollama" in [c[1] for c in ww.doctor_checks(now=NOW)],
+      "CONTROL: with Ollama for the quick jobs, there is")
+ok, detail, fix = line(ww.doctor_checks(now=NOW), "brain")
+check("quick jobs" in detail and "ollama" in detail,
+      f"the brain line names the quick brain when it is a different one ({detail[:120]})")
+ww.QUICK_BRAIN = saved_quick
+ok, detail, fix = line(ww.doctor_checks(now=NOW), "transcriber")
+check("YouTube's terms" in detail, f"the transcriber line repeats the terms warning ({detail[:140]})")
+os.environ.pop("OPENROUTER_API_KEY", None)        # in this process only; a real key is never read
+check("Jev" not in [c[1] for c in ww.doctor_checks(now=NOW)], "with Jev off there is no Jev line")
+ww.OPPORTUNITY_SCREEN_BACKEND = "jev"
+ok, detail, fix = line(ww.doctor_checks(now=NOW), "Jev")
+check(not ok and "OPENROUTER_API_KEY" in fix, f"Jev on with no key says where the key goes ({fix})")
+os.environ["OPENROUTER_API_KEY"] = "not-a-real-key-123"
+ok, detail, fix = line(ww.doctor_checks(now=NOW), "Jev")
+check(ok and "not-a-real-key-123" not in detail and "OPENROUTER_API_KEY" in detail,
+      f"and with one, names the variable, never the key ({detail})")
+os.environ.pop("OPENROUTER_API_KEY", None)
+ww.OPPORTUNITY_SCREEN_BACKEND = "local"
+
 print("\n  the folders, the context file and the channels")
 saved_config = ww.CONFIG_DIR
 ww.CONFIG_DIR = ww.CONFIG_DIR.parent / "not-made-yet"

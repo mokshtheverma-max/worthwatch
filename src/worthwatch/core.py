@@ -180,8 +180,28 @@ FEED_ENRICHMENT = True
 # --- the audio path -------------------------------------------------------------------
 # A transcript for a video with no captions: download the smallest format that carries the
 # audio and transcribe it on this machine with faster-whisper. Downloading may break YouTube's
-# terms, so it is off unless switched on, and it needs the optional worthwatch[whisper] extra.
-AUDIO_PATH_ENABLED = True
+# terms, so it is off unless switched on (settings.toml [transcripts] audio = true), and it
+# needs the optional worthwatch[whisper] extra.
+AUDIO_PATH_ENABLED = False
+AUDIO_TERMS_WARNING = ("Downloading a video's audio may break YouTube's terms of service. "
+                       "worthwatch does it only because you switched it on ([transcripts] audio "
+                       "= true in settings.toml); switch it off to use captions alone.")
+WHISPER_EXTRA_FIX = "uv tool install --reinstall \"worthwatch[whisper]\""
+
+
+def whisper_installed():
+    """True when the optional transcriber, faster-whisper, can be imported. Imports nothing."""
+    import importlib.util
+    return importlib.util.find_spec("faster_whisper") is not None
+
+
+def audio_path_ready():
+    """(ready, why not): the audio path is switched on and its transcriber is installed."""
+    if not AUDIO_PATH_ENABLED:
+        return False, "switched off ([transcripts] audio = true in settings.toml switches it on)"
+    if not whisper_installed():
+        return False, f"it needs the whisper extra: {WHISPER_EXTRA_FIX}"
+    return True, ""
 # The caption path skips dash and hls because they cost requests and carry no subtitles.
 # The audio path needs formats, and on some videos they only exist in those manifests, so
 # it skips nothing and lets the extraction list everything it can.
@@ -211,12 +231,12 @@ PATH_DELAY_SECONDS = {"captions": CAPTION_DELAY_SECONDS, "audio": AUDIO_DELAY_SE
 # Two transcript paths, each with its own switch, cooldown, adaptive cap, gap and ledger: the
 # caption path (YouTube's own captions) and the audio path (a download transcribed here). A
 # refusal on one is a fact about that path only, so a cooldown on one never stops the other.
-CAPTION_PATH_ENABLED = False
+CAPTION_PATH_ENABLED = True
 # The order the enabled paths are tried in: the first usable one leads the slot and is the
 # one the canary probes, the next is its per-video fallback. Nothing here decides whether
 # a path is on - CAPTION_PATH_ENABLED and AUDIO_PATH_ENABLED do that - only what comes
-# first when both are.
-PATH_PREFERENCE = ("audio", "captions")
+# first when both are. Captions first: they need no download and no transcriber.
+PATH_PREFERENCE = ("captions", "audio")
 
 # --- local transcription ---------------------------------------------------------------
 # faster-whisper (CTranslate2), only with the optional worthwatch[whisper] extra. No ffmpeg
@@ -942,7 +962,8 @@ def run_yt_dlp(cmd, timeout=120):
                 print(f"  HTTP 429 from YouTube on the {path} path. Cooldown armed: no "
                       f"{path} request until {until.strftime('%Y-%m-%d %H:%M')} "
                       f"({format_duration(wait)} from now, strike {strikes}). "
-                      f"Scheduled runs will skip that path until then.")
+                      f"worthwatch waits: later runs skip that path until then, and nothing "
+                      f"tries another way in.")
         raise RateLimitError(detail)
     status = "ok" if proc.returncode == 0 else f"exit{proc.returncode}"
     errors = [l.strip() for l in (stderr or "").splitlines() if l.startswith("ERROR")]
@@ -2325,6 +2346,9 @@ def ollama_failure_words(error, timeout):
 
 
 def ensure_local_model(model_name):
+    """Make sure Ollama has the model, when the quick brain is Ollama; nothing otherwise."""
+    if quick_brain() != "ollama":
+        return
     if not ollama_is_running():
         why = f"it is not reachable at {OLLAMA_HOST}"
         trip_ollama(why)
@@ -2384,12 +2408,17 @@ EXTRACTION_NUM_PREDICT = 800  # a terse bullet list of one transcript chunk
 
 
 def summarize_local(model, context_text, meta, transcript_text, num_ctx=NUM_CTX, extra=""):
+    """The short write-up, on the quick brain. A local model's window is small, so a long
+    transcript is read in chunks there; the other brains take it whole."""
+    if quick_brain() != "ollama":
+        return quick_generate(build_prompt(context_text, meta, transcript_text, extra)), False
     overhead_tokens = estimate_tokens(build_prompt(context_text, meta, "", extra))
     available_for_transcript = num_ctx - overhead_tokens - RESPONSE_RESERVE_TOKENS
 
     if estimate_tokens(transcript_text) <= available_for_transcript:
         prompt = build_prompt(context_text, meta, transcript_text, extra)
-        return ollama_generate(model, prompt, num_ctx=num_ctx, num_predict=SUMMARY_NUM_PREDICT), False
+        return quick_generate(prompt, model=model, num_ctx=num_ctx,
+                              num_predict=SUMMARY_NUM_PREDICT), False
 
     chunk_char_budget = int(available_for_transcript * CHARS_PER_TOKEN * 0.8)
     chunks = split_into_chunks(transcript_text, max(chunk_char_budget, 2000))
@@ -2397,11 +2426,12 @@ def summarize_local(model, context_text, meta, transcript_text, num_ctx=NUM_CTX,
     for i, chunk in enumerate(chunks, 1):
         print(f"  chunk {i}/{len(chunks)}...")
         extraction_prompt = EXTRACTION_INSTRUCTIONS.format(i=i, n=len(chunks), chunk=chunk)
-        note = ollama_generate(model, extraction_prompt, num_ctx=num_ctx, num_predict=EXTRACTION_NUM_PREDICT)
+        note = quick_generate(extraction_prompt, model=model, num_ctx=num_ctx,
+                              num_predict=EXTRACTION_NUM_PREDICT)
         notes.append(f"[part {i} of {len(chunks)}]\n{note.strip()}")
     merged_notes = "\n\n".join(notes)
     prompt = build_prompt(context_text, meta, merged_notes, extra)
-    response = ollama_generate(model, prompt, num_ctx=num_ctx, num_predict=SUMMARY_NUM_PREDICT)
+    response = quick_generate(prompt, model=model, num_ctx=num_ctx, num_predict=SUMMARY_NUM_PREDICT)
     prefix = f"(This video's transcript was long enough that it was summarized in {len(chunks)} chunks and merged.)\n\n"
     return prefix + response, True
 
@@ -2519,13 +2549,185 @@ def claude_generate(prompt, timeout=600):
     return stdout.strip()
 
 
+# --- the brains, behind one interface --------------------------------------------------------
+# Two jobs need a model. The quick ones (triage, short screens, a one-sentence squeeze) go to
+# quick_generate, the write-ups and cards to write_generate. Which brain does each comes from
+# settings.toml [brain]: kind for the write-ups, quick for the quick jobs when it should be a
+# different one (a local Ollama model for triage and claude to write is how this tool started).
+# See brains.py for what each brain is.
+QUICK_BRAIN = ""                # empty: the writing brain does the quick jobs too
+BRAIN_MODEL = ""                # settings [brain] model
+QUICK_MODEL = ""                # settings [brain] quick_model
+API = {"provider": "", "base_url": "", "key_env": ""}
+CLAUDE_MODELS = {"quick": "haiku", "write": "sonnet", "large": "opus"}
+CODEX_TIMEOUT_GRACE = 5
+
+
+class AgentMode(RuntimeError):
+    """The brain is agent mode: worthwatch calls no model, your own agent does the judging."""
+
+
+AGENT_MODE_WORDS = ("Your brain is agent mode, so worthwatch calls no model itself: open your AI "
+                    "agent with worthwatch's MCP server (`worthwatch mcp`) and ask it to check your "
+                    "channels and judge the videos. Or choose a brain that worthwatch can call: "
+                    "`worthwatch init --brain claude` (or codex, api, ollama).")
+
+
+def quick_brain():
+    return QUICK_BRAIN or BRAIN
+
+
+def quick_generate(prompt, model=None, num_ctx=NUM_CTX, timeout=900, num_predict=None,
+                   temperature=None):
+    """A quick job, on the quick brain. `model` is a local model's name, used only when the
+    quick brain is Ollama."""
+    if quick_brain() == "ollama":
+        return ollama_generate(model or QUICK_MODEL or DEFAULT_LOCAL_MODEL, prompt, num_ctx=num_ctx,
+                               timeout=timeout, num_predict=num_predict, temperature=temperature)
+    return generate_with(quick_brain(), prompt, "quick", timeout)
+
+
+def write_generate(prompt, timeout=600, size="write"):
+    """A write-up or a card, on the writing brain. size "large" asks for the biggest model the
+    brain has (the daily remix), and falls back to the writing one."""
+    return generate_with(BRAIN, prompt, size, timeout)
+
+
+def generate_with(kind, prompt, size, timeout):
+    model = (QUICK_MODEL if size == "quick" else BRAIN_MODEL) or ""
+    if kind == "agent":
+        raise AgentMode(AGENT_MODE_WORDS)
+    if kind == "claude":
+        if size == "write" and not model:
+            return claude_generate(prompt, timeout=timeout)
+        return claude_generate_with(prompt, model or CLAUDE_MODELS[size], timeout=timeout)
+    if kind == "codex":
+        return codex_generate(prompt, model=model or None, timeout=timeout)
+    if kind == "api":
+        return api_generate(prompt, "quick" if size == "quick" else "write", timeout=timeout)
+    if kind == "ollama":
+        return ollama_generate(model or DEFAULT_LOCAL_MODEL, prompt, timeout=timeout)
+    raise RuntimeError(f"{kind!r} is not a brain worthwatch knows (agent, claude, codex, api, ollama)")
+
+
+def brain_label(kind, size, model=None):
+    """What a write-up's header and the history say wrote it."""
+    if kind == "ollama":
+        name = model or (QUICK_MODEL if size == "quick" else BRAIN_MODEL) or DEFAULT_LOCAL_MODEL
+        return f"local:{name}"
+    if kind == "claude":
+        return f"claude:{(QUICK_MODEL if size == 'quick' else BRAIN_MODEL) or CLAUDE_MODELS[size]}"
+    if kind == "api":
+        provider, base, _key, models = api_endpoint(os.environ)
+        return f"api:{provider or base}/{models['quick' if size == 'quick' else 'write']}"
+    return kind
+
+
+def write_label():
+    return brain_label(BRAIN, "write")
+
+
+def quick_label(model=None):
+    return brain_label(quick_brain(), "quick", model)
+
+
+def codex_generate(prompt, model=None, timeout=600):
+    """OpenAI's Codex CLI, as its documentation describes non-interactive use: the prompt on
+    stdin (`-`), progress on stderr and the final message alone on stdout, a read-only sandbox,
+    no session files kept (--ephemeral), and --skip-git-repo-check because it runs in an empty
+    folder of its own inside the data folder, where there is nothing of yours to read."""
+    codex_path = shutil.which("codex")
+    if not codex_path:
+        raise RuntimeError("the codex CLI is not installed, or not on the PATH")
+    workdir = Path(DATA_DIR) / "codex-workdir"
+    workdir.mkdir(parents=True, exist_ok=True)
+    argv = [codex_path, "exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only",
+            "--color", "never"] + (["-m", model] if model else []) + ["-"]
+    proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
+                            cwd=str(workdir), **group_kwargs())
+    try:
+        stdout, stderr = proc.communicate(input=prompt, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        kill_tree(proc)
+        try:
+            proc.wait(timeout=CODEX_TIMEOUT_GRACE)
+        except subprocess.TimeoutExpired:
+            pass
+        raise RuntimeError(f"codex exec timed out after {timeout}s and was stopped.")
+    if proc.returncode != 0:
+        raise RuntimeError(f"codex exec failed (exit {proc.returncode}): {one_line(stderr)[-600:]}")
+    return (stdout or "").strip()
+
+
+def api_endpoint(env):
+    """(provider, base URL, key, {"quick": model, "write": model}) for the api brain: a base_url
+    you set, else the provider you named, else the first service whose key is set. The key is
+    returned to the caller only, and never put in a message."""
+    from . import brains
+    if API.get("base_url"):
+        key = (env.get(API.get("key_env") or "") or "").strip()
+        models = {"quick": QUICK_MODEL or BRAIN_MODEL, "write": BRAIN_MODEL or QUICK_MODEL}
+        return "", API["base_url"], key, models
+    names = [API["provider"]] if API.get("provider") else list(brains.API_PROVIDERS)
+    for name in names:
+        conf = brains.API_PROVIDERS[name]
+        key = (env.get(conf["env"]) or "").strip()
+        if key or API.get("provider"):
+            return name, conf["base"], key, {"quick": QUICK_MODEL or conf["quick"],
+                                             "write": BRAIN_MODEL or conf["write"]}
+    return "", "", "", {"quick": QUICK_MODEL, "write": BRAIN_MODEL}
+
+
+def api_generate(prompt, size, timeout=600, env=None, opener=None):
+    """One chat completion from an OpenAI-compatible API: POST <base>/chat/completions with the
+    key as a bearer token, the prompt as one user message. A refusal (HTTP 429) says to wait;
+    no message ever holds the key."""
+    from . import brains
+    env = os.environ if env is None else env
+    opener = opener or urllib.request.urlopen
+    provider, base, key, models = api_endpoint(env)
+    if not base or not key:
+        where = (API.get("key_env") or "the variable named in api_key_env") if API.get("base_url") \
+            else ", ".join(brains.API_PROVIDERS[API["provider"]]["env"] if API.get("provider")
+                           else brains.API_KEY_VARIABLES)
+        raise RuntimeError(f"the api brain has no key: none is set in {where}")
+    model = models["quick" if size == "quick" else "write"]
+    if not model:
+        raise RuntimeError("the api brain has no model: set model under [brain] in settings.toml")
+    url = base.rstrip("/") + "/chat/completions"
+    body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}]})
+    req = urllib.request.Request(url, data=body.encode("utf-8"), method="POST",
+                                 headers={"Content-Type": "application/json",
+                                          "Authorization": f"Bearer {key}",
+                                          "User-Agent": f"worthwatch/{__version__}"})
+    try:
+        with opener(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", errors="replace").replace(key, "<key>")
+        if e.code == 429:
+            raise RuntimeError(f"the API refused for now (HTTP 429, too many requests); wait and "
+                               f"try again later: {one_line(detail)[:200]}") from None
+        raise RuntimeError(f"the API answered HTTP {e.code}: {one_line(detail)[:300]}") from None
+    except (urllib.error.URLError, OSError) as e:
+        raise RuntimeError(f"the API did not answer: {one_line(str(e)).replace(key, '<key>')}") from None
+    except ValueError as e:
+        raise RuntimeError(f"the API answered with something that is not JSON: {e}") from None
+    try:
+        return (data["choices"][0]["message"]["content"] or "").strip()
+    except (KeyError, IndexError, TypeError):
+        raise RuntimeError(f"the API answered without a message: {one_line(str(data))[:200]}") from None
+
+
 def summarize_claude(context_text, meta, transcript_text, timeout=None, extra=""):
-    """timeout=None means "work it out from the length", which is what every caller in the
+    """The write-up, on the writing brain (the name is the tool's history: it was Claude's).
+    timeout=None means "work it out from the length", which is what every caller in the
     tool now does; a number is still honoured so a test can pin it."""
     if timeout is None:
         timeout, _why = summary_timeout_for((meta or {}).get("minutes"))
-    reply = claude_generate(build_prompt(context_text, meta, transcript_text, extra, ideas=True),
-                            timeout=timeout)
+    reply = write_generate(build_prompt(context_text, meta, transcript_text, extra, ideas=True),
+                           timeout=timeout)
     # The ideas lane: the Ideas part is taken off here, before any check reads the write-up, and
     # waits on the meta for save_writeup. A re-ask that brings no part of its own keeps the
     # first one.
@@ -4295,11 +4497,11 @@ def cmd_resummarize(argv):
         if use_claude:
             def again(note, _m=meta):
                 return summarize_claude(context_text, _m, _m["transcript"], extra=note)[0]
-            label = "claude:sonnet"
+            label = write_label()
         else:
             def again(note, _m=meta):
                 return summarize_local(local_model, context_text, _m, _m["transcript"], extra=note)[0]
-            label = f"local:{local_model}"
+            label = quick_label(local_model)
 
         t0 = time.monotonic()
         summary, chunked = (summarize_claude(context_text, meta, meta["transcript"]) if use_claude
@@ -5348,8 +5550,8 @@ def triage_video(context_text, channel_name, details, model, sells_something=Non
     )
     # num_predict caps worst-case generation length for what should be a two-line
     # answer: a model that fails to stop naturally should hit this, not run away.
-    response = ollama_generate(model, prompt, num_ctx=NUM_CTX, timeout=timeout, num_predict=200,
-                               temperature=0)
+    response = quick_generate(prompt, model=model, num_ctx=NUM_CTX, timeout=timeout,
+                              num_predict=200, temperature=0)
     confidence = parse_confidence(response)
     m = re.search(r"VERDICT:\s*(YES|OPPORTUNITY|MAYBE|NO)\b\s*-\s*(.+)", response,
                   re.IGNORECASE | re.DOTALL)
@@ -5428,10 +5630,11 @@ def choose_backend(verdict, title, meta, local_only, model):
         return "claude", "a priority channel always gets the full write-up"
     if local_only:
         if is_technical_video(meta):
-            return "claude", "--local-only, but a technical video always goes to Sonnet"
+            return "claude", "--local-only, but a technical video always goes to the writing brain"
         return "local", "--local-only"
     if verdict in ("YES", "OPPORTUNITY", "MAYBE"):
-        return "claude", f"{verdict} gets Sonnet; the local model does not write judgment"
+        return "claude", (f"{verdict} gets the writing brain; the quick brain does not write "
+                          f"judgment")
     return "local", verdict
 
 
@@ -5454,10 +5657,10 @@ def local_most_useful(context_text, meta, model):
     """The second line of a NO's two-line entry, for a video that was fetched and then read
     as NO: one sentence from the local model, or None if it cannot be asked."""
     try:
-        response = ollama_generate(model, MOST_USEFUL_INSTRUCTIONS.format(
+        response = quick_generate(MOST_USEFUL_INSTRUCTIONS.format(
             reader=READER, context=context_text, title=meta["title"],
             transcript=triage_excerpt(meta.get("transcript"))),
-            num_ctx=NUM_CTX, timeout=300, num_predict=80)
+            model=model, num_ctx=NUM_CTX, timeout=300, num_predict=80)
     except Exception as e:  # noqa: BLE001 - a missing second line is not a failed video
         print(f"    (could not ask the local model for the most useful line: {e.__class__.__name__})")
         return None
@@ -5535,11 +5738,11 @@ def summarise_one(context_text, meta, model, local_only, verdict, attempt=1):
         print(f"    summary timeout: {timeout:.0f}s ({why})")
         summary, chunked = summarize_claude(context_text, meta, meta["transcript"],
                                             timeout=timeout)
-        backend_label = "claude:sonnet"
+        backend_label = write_label()
     else:
         ensure_local_model(model)
         summary, chunked = summarize_local(model, context_text, meta, meta["transcript"])
-        backend_label = f"local:{model}"
+        backend_label = quick_label(model)
     elapsed = time.monotonic() - t0
     print(f"    -> summarized ({backend_label}, {elapsed:.1f}s; {backend_why})")
 
@@ -7931,12 +8134,12 @@ def working_now_table(cutoff):
                 f"evidence: {r['evidence']} | video: {r['title']}" for i, r in enumerate(rows, 1)]
     prompt = WORKING_NOW_INSTRUCTIONS.format(reader=READER, n=len(rows),
                                              lines="\n".join(numbered))
-    print(f"  Asking claude (sonnet) to group {len(rows)} opportunity line(s)...")
+    print(f"  Asking the writing brain ({write_label()}) to group {len(rows)} opportunity line(s)...")
     try:
-        body = normalize_punct(claude_generate(prompt, timeout=900).strip())
+        body = normalize_punct(write_generate(prompt, timeout=900).strip())
     except RuntimeError as e:
-        return [f"> **TABLE NOT BUILT.** claude could not be asked ({e}); the {len(rows)} "
-                f"opportunity line(s) are in OPPORTUNITIES.md, ungrouped."], []
+        return [f"> **TABLE NOT BUILT.** the writing brain could not be asked ({e}); the "
+                f"{len(rows)} opportunity line(s) are in OPPORTUNITIES.md, ungrouped."], []
     return enforce_working_now_table(body, rows, cutoff_str)
 
 
@@ -8350,9 +8553,10 @@ def run_rollup(name, context_text, url_file=None, channel=None, days=None):
         n=len(items), context=context_text, summaries=joined,
         max_words=max(600, ROLLUP_MAX_WORDS - reserve),
     )
-    print(f"  Asking claude (sonnet) over {len(prompt):,} characters. This takes a few minutes...")
+    print(f"  Asking the writing brain ({write_label()}) over {len(prompt):,} characters. This "
+          f"takes a few minutes...")
     t0 = time.monotonic()
-    body = normalize_punct(claude_generate(prompt, timeout=1800).strip())
+    body = normalize_punct(write_generate(prompt, timeout=1800).strip())
     elapsed = time.monotonic() - t0
 
     target = ROLLUP_MAX_WORDS - reserve
@@ -8360,7 +8564,7 @@ def run_rollup(name, context_text, url_file=None, channel=None, days=None):
     if actual > target:
         print(f"  ({actual} words, over the {target}-word budget; one trim pass...)")
         try:
-            trimmed = normalize_punct(claude_generate(
+            trimmed = normalize_punct(write_generate(
                 ROLLUP_TRIM_INSTRUCTIONS.format(actual=actual, target=target, text=body),
                 timeout=1200).strip())
             if trimmed:
@@ -8443,7 +8647,8 @@ def judge_channel_fit(context_text, info, recent, model):
     prompt = FIT_INSTRUCTIONS.format(reader=READER, context=context_text, name=info["name"],
                                       about=(info["description"] or "")[:400], titles=titles_text)
     try:
-        response = ollama_generate(model, prompt, num_ctx=NUM_CTX, timeout=90, num_predict=150)
+        response = quick_generate(prompt, model=model, num_ctx=NUM_CTX, timeout=90,
+                                  num_predict=150)
     except RuntimeError as e:
         return f"SELLS: UNKNOWN | FIT: low - could not judge ({e})"
     return response.strip().splitlines()[0]
@@ -9340,8 +9545,8 @@ def screen_opportunity_local(meta, model):
             title=meta.get("title") or "", transcript=triage_excerpt(meta.get("transcript")))
         left = run_seconds_left()
         timeout = 300 if left is None else max(TRIAGE_MIN_TIMEOUT, min(300, left))
-        response = ollama_generate(model, prompt, num_ctx=NUM_CTX, timeout=timeout,
-                                   num_predict=OPPORTUNITY_SCREEN_NUM_PREDICT, temperature=0)
+        response = quick_generate(prompt, model=model, num_ctx=NUM_CTX, timeout=timeout,
+                                  num_predict=OPPORTUNITY_SCREEN_NUM_PREDICT, temperature=0)
     except Exception as e:  # noqa: BLE001 - the screen is extra; its failure is nobody's verdict
         return {"error": one_line(f"{e.__class__.__name__}: {e}")[:200], "model": model}
     screen = parse_screen(response)
@@ -9496,7 +9701,7 @@ def write_opportunity_card(context_text, meta):
         url=meta.get("url") or "", transcript=triage_excerpt(meta.get("transcript")))
     t0 = time.monotonic()
     try:
-        reply = claude_generate(prompt, timeout=timeout)
+        reply = write_generate(prompt, timeout=timeout)
     except Exception as e:  # noqa: BLE001 - the card's failure is the card's, not the video's
         return finish_card({"kind": "error", "why": one_line(f"{e.__class__.__name__}: {e}")[:200]})
     card = parse_card(reply)
@@ -10523,9 +10728,16 @@ def remix_day(day, store=None, now=None):
             save_ideas(store)
         return entry
     reply, model, errors = None, None, []
-    for name in REMIX_MODELS:
+    # Claude: the strongest model first, the next if it fails. Every other brain: its writing
+    # model, once.
+    attempts = ([(name, lambda n=name: claude_generate_with(prompt, n,
+                                                             timeout=REMIX_TIMEOUT_SECONDS))
+                 for name in REMIX_MODELS] if BRAIN == "claude"
+                else [(write_label(), lambda: write_generate(prompt, timeout=REMIX_TIMEOUT_SECONDS,
+                                                             size="large"))])
+    for name, call in attempts:
         try:
-            reply, model = claude_generate_with(prompt, name, timeout=REMIX_TIMEOUT_SECONDS), name
+            reply, model = call(), name
             break
         except RuntimeError as e:
             errors.append(f"{name}: {one_line(str(e))[:160]}")
@@ -11220,8 +11432,8 @@ def ensure_one_sentence(text, model):
     if len(re.findall(r"[.!?](?:\s|$)", text)) <= 1 and len(text) <= 200:
         return text
     try:
-        compressed = ollama_generate(model, ONE_SENTENCE_INSTRUCTIONS.format(text=text),
-                                      num_ctx=NUM_CTX, num_predict=100)
+        compressed = quick_generate(ONE_SENTENCE_INSTRUCTIONS.format(text=text), model=model,
+                                    num_ctx=NUM_CTX, num_predict=100)
         compressed = normalize_punct(compressed.strip().splitlines()[0].strip())
         return compressed or text
     except Exception as e:  # noqa: BLE001 - Ollama down is not a reason to lose the line
@@ -11395,15 +11607,15 @@ def process_video(url, context_text, use_claude, compare, model_override):
         local_elapsed = time.monotonic() - t0
         local_summary = finalize_summary(
             local_summary, meta["transcript"], model, verdict=meta.get("verdict"), meta=meta,
-            backend=f"local:{model}")
+            backend=quick_label(model))
 
-        print("Running claude (sonnet)...")
+        print(f"Running the writing brain ({write_label()})...")
         t0 = time.monotonic()
         claude_summary, claude_chunked = summarize_claude(context_text, meta, meta["transcript"])
         claude_elapsed = time.monotonic() - t0
         claude_summary = finalize_summary(
             claude_summary, meta["transcript"], model, verdict=meta.get("verdict"), meta=meta,
-            backend="claude:sonnet",
+            backend=write_label(),
             regenerate=lambda note: summarize_claude(context_text, meta,
                                                      meta["transcript"], extra=note)[0])
 
@@ -11417,10 +11629,10 @@ def process_video(url, context_text, use_claude, compare, model_override):
         # even in --compare (see TECHNICAL_KEYWORDS): both still run and print above
         # so the comparison itself stays visible, but the saved/copied one is Sonnet's.
         if is_technical_video(meta):
-            default_summary, default_label = claude_summary, "claude:sonnet"
+            default_summary, default_label = claude_summary, write_label()
             default_elapsed, default_chunked = claude_elapsed, claude_chunked
         else:
-            default_summary, default_label = local_summary, f"local:{model}"
+            default_summary, default_label = local_summary, quick_label(model)
             default_elapsed, default_chunked = local_elapsed, local_chunked
         md_path = save_writeup(meta, default_summary, default_label, default_elapsed, default_chunked)
         copied, how = copy_to_clipboard(default_summary)
@@ -11430,25 +11642,26 @@ def process_video(url, context_text, use_claude, compare, model_override):
               if copied else f"(not copied to the clipboard: {how})")
         return {"status": "ok", "id": meta["id"], "title": meta["title"]}
 
-    if use_claude or is_technical_video(meta):
+    writing = bool(use_claude or is_technical_video(meta))
+    if writing:
         if not use_claude:
-            print("Technical video (Claude/Anthropic/agent content): routing to Sonnet, not the local model.")
-        model_label = "claude:sonnet"
-        print("Running claude (sonnet)...")
+            print("Technical video: routing it to the writing brain, not the quick one.")
+        model_label = write_label()
+        print(f"Running the writing brain ({model_label})...")
         t0 = time.monotonic()
         summary, chunked = summarize_claude(context_text, meta, meta["transcript"])
         elapsed = time.monotonic() - t0
     else:
         model = model_override or DEFAULT_LOCAL_MODEL
         ensure_local_model(model)
-        print(f"Running local ({model})...")
+        print(f"Running the quick brain ({quick_label(model)})...")
         t0 = time.monotonic()
         summary, chunked = summarize_local(model, context_text, meta, meta["transcript"])
         elapsed = time.monotonic() - t0
-        model_label = f"local:{model}"
+        model_label = quick_label(model)
 
     _local_model = model_override or DEFAULT_LOCAL_MODEL
-    if model_label == "claude:sonnet":
+    if writing:
         _again = lambda note: summarize_claude(context_text, meta, meta["transcript"], extra=note)[0]
     else:
         _again = lambda note: summarize_local(_local_model, context_text, meta,
@@ -11701,9 +11914,22 @@ def doctor_checks(now=None):
     if BRAIN == "agent":
         how = ("agent mode: your own AI agent does the judging, through `worthwatch mcp`; "
                "worthwatch calls no model itself")
-    out.append((ok, "brain", f"{BRAIN}: {how}",
+    detail = f"{BRAIN}: {how}"
+    if quick_brain() != BRAIN:
+        quick_ok, quick_how = found.get(quick_brain(), (False, "not a brain worthwatch knows"))
+        ok = ok and quick_ok
+        detail += f"; quick jobs: {quick_brain()}: {quick_how}"
+    out.append((ok, "brain", detail,
                 None if ok else f"install it, or choose another brain with `worthwatch init "
                                 f"--brain NAME` (agent, claude, codex, api, ollama)"))
+    if OPPORTUNITY_SCREEN_BACKEND == "jev":
+        from . import jev as _jev
+        has_key = bool((os.environ.get(_jev.KEY_ENV) or "").strip())
+        out.append((has_key, "Jev",
+                    f"on, with a key in {_jev.KEY_ENV}, at most ${JEV_DAILY_CAP_USD:.2f} a day"
+                    if has_key else f"switched on, but {_jev.KEY_ENV} is not set",
+                    None if has_key else f"set {_jev.KEY_ENV} in your environment, or switch Jev "
+                                         f"off ([jev] enabled = false in settings.toml)"))
 
     missing = [f"{n} ({p})" for n, p in (("config", CONFIG_DIR), ("data", DATA_DIR),
                                           ("output", OUTPUT_DIR)) if not Path(p).is_dir()]
@@ -11718,18 +11944,20 @@ def doctor_checks(now=None):
                                  else "give your user permission to write there, or move the "
                                       "folder with [paths] in settings.toml")))
 
-    try:
-        models = doctor_ollama_models()
-        ok = DEFAULT_LOCAL_MODEL in models
-        out.append((ok, "Ollama", f"answers; {DEFAULT_LOCAL_MODEL} " + (
-            "pulled" if ok else "not pulled"),
-            None if ok else f"ollama pull {DEFAULT_LOCAL_MODEL}"))
-    except OllamaDown as e:
-        out.append((False, "Ollama", f"no answer: {e}",
-                    "start the Ollama app, or run: ollama serve"))
+    if "ollama" in (BRAIN, quick_brain()):
+        wanted = (QUICK_MODEL if quick_brain() == "ollama" else BRAIN_MODEL) or DEFAULT_LOCAL_MODEL
+        try:
+            models = doctor_ollama_models()
+            ok = wanted in models
+            out.append((ok, "Ollama", f"answers; {wanted} " + ("pulled" if ok else "not pulled"),
+                        None if ok else f"ollama pull {wanted}"))
+        except OllamaDown as e:
+            out.append((False, "Ollama", f"no answer: {e}",
+                        "start the Ollama app, or run: ollama serve"))
 
     if AUDIO_PATH_ENABLED:
         ready, what = doctor_whisper_ready()
+        what = f"{what} (you switched the audio path on; downloading may break YouTube's terms)"
         gpu = doctor_gpu() if ready else None
         if not ready:
             out.append((False, "transcriber", what,
@@ -11855,6 +12083,14 @@ def apply_profile(profile):
     g["IDEA_ASSETS"] = profile.assets
     g["SIGN_WORD"] = profile.sign_word
     g["BRAIN"] = profile.brain
+    g["QUICK_BRAIN"] = profile.quick_brain
+    g["BRAIN_MODEL"] = profile.brain_model
+    g["QUICK_MODEL"] = profile.quick_model
+    g["API"] = {"provider": profile.api_provider, "base_url": profile.api_base_url,
+                "key_env": profile.api_key_env}
+    g["AUDIO_PATH_ENABLED"] = profile.audio
+    g["OPPORTUNITY_SCREEN_BACKEND"] = "jev" if profile.jev_enabled else "local"
+    g["JEV_DAILY_CAP_USD"] = profile.jev_daily_cap
     g["JS_RUNTIME"] = profile.js_runtime
     g["FAVOURITE_CHANNELS"] = profile.priority_channels
     g["FAVOURITE_DAILY_RESERVE"] = profile.priority_daily_reserve
@@ -11967,9 +12203,12 @@ def main():
     parser.add_argument("urls", nargs="*", help="one or more YouTube URLs")
     parser.add_argument("--file", help="path to a text file of URLs, one per line "
                                         "(with --rollup: which batch to roll up)")
-    parser.add_argument("--claude", action="store_true", help="use the Claude backend instead of local")
-    parser.add_argument("--compare", action="store_true", help="run local and Claude, side by side")
-    parser.add_argument("--model", default=None, help="override the local Ollama model")
+    parser.add_argument("--claude", action="store_true",
+                        help="write a URL's write-up with the writing brain, not the quick one")
+    parser.add_argument("--compare", action="store_true",
+                        help="write it with both brains, side by side")
+    parser.add_argument("--model", default=None,
+                        help="the local model to use when the quick brain is Ollama")
     parser.add_argument("--channels", action="store_true", help="check channels.txt for videos you haven't seen")
     parser.add_argument("--days", type=int, default=None,
                         help="with --channels, only videos published in the last N days; "
@@ -11984,8 +12223,8 @@ def main():
     parser.add_argument("--from-channel", default=None, metavar="TEXT",
                         help="with --rollup, only summaries whose uploader matches TEXT")
     parser.add_argument("--local-only", action="store_true",
-                        help="never call the claude backend, even for YES verdicts, except technical "
-                             "videos (Claude/Anthropic/agent content), which always go to Sonnet")
+                        help="write everything with the quick brain, even YES verdicts, except "
+                             "technical videos, which always go to the writing brain")
     parser.add_argument("--ignore-cooldown", action="store_true",
                         help="fetch even during a post-429 cooldown (you are the rate limit now)")
     parser.add_argument("--canary", action="store_true",
@@ -12000,6 +12239,23 @@ def main():
                         help="with --captions, put the caption path in front of the audio path, "
                              "so the slot's canary is a caption request again")
     args = parser.parse_args()
+
+    # Agent mode: worthwatch calls no model, so nothing that judges or writes runs from here;
+    # your agent does it through `worthwatch mcp`. Said before any request is made.
+    needs_a_model = (args.weekly or args.rollup or args.discover or args.channels or args.search
+                     or args.topics or args.urls or args.file)
+    if BRAIN == "agent" and needs_a_model:
+        print(AGENT_MODE_WORDS)
+        sys.exit(2)
+    # The audio path runs only when it is switched on and its transcriber is installed; when it
+    # runs, the run says plainly what downloading may mean.
+    if AUDIO_PATH_ENABLED and needs_a_model:
+        ready, why = audio_path_ready()
+        if ready:
+            print(AUDIO_TERMS_WARNING)
+        else:
+            print(f"The audio path is switched on, but {why}. This run uses captions only.")
+            globals()["AUDIO_PATH_ENABLED"] = False
 
     if args.weekly:
         run_weekly()

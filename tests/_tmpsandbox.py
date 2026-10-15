@@ -66,6 +66,10 @@ def sandbox(ww, name, profile=True):
     ww.RAW_DIR.mkdir(parents=True, exist_ok=True)
     if profile:
         ww.apply_profile(_settings.load_profile(config))
+        # The brains every suite was written against: the quick jobs (triage, short screens)
+        # on a local Ollama model and the write-ups on claude. Each suite stubs both leaves,
+        # ollama_generate and claude_generate; none of them reaches a real model.
+        ww.BRAIN, ww.QUICK_BRAIN = "claude", "ollama"
     for attr, value in sorted(vars(ww).items()):
         if isinstance(value, Path) and attr not in READ_ONLY:
             try:

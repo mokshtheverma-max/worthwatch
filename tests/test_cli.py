@@ -94,6 +94,7 @@ check(code == 0, f"init with no --brain and no terminal exits 0 ({code})")
 kind = firstrun.recorded_brain(home / "settings.toml")
 check(kind in brains.BRAIN_KINDS, f"and records one of the brains ({kind})")
 check(f"brain: {kind}" in out, f"and says which it chose: {out.strip()[-160:]!r}")
+check("your choice" not in out, "and does not call it your choice, since nobody chose")
 
 print("\n=== E. choosing a brain ===")
 none_found = {k: (k == "agent", "") for k in brains.BRAIN_KINDS}

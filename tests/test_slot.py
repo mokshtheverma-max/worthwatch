@@ -27,6 +27,9 @@ ww.AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 # worthwatch never names a YouTube player client, so the fake below tells the media client's
 # calls from the caption client's by the one flag that differs (see is_media_call), and the
 # request log says which path asked.
+# The transcriber is faked below, so as far as a run started from main() can tell, the whisper
+# extra is installed; without this main() would drop the audio path for the run.
+ww.whisper_installed = lambda: True
 
 fails = []
 def fake_reencode(path):
@@ -222,15 +225,17 @@ def history_rows():
 
 
 # =====================================================================================
-print("=== A. what production ships: audio leads, captions are off ===")
-# Read off the module as shipped, before any section moves the switches.
+print("=== A. what worthwatch ships: captions lead, the audio path is off ===")
+# Read off the module as shipped, before any section moves the switches. The example settings
+# leave the audio path off too ([transcripts] audio), so the sandbox's profile agrees.
 import importlib
 shipped = importlib.import_module("worthwatch.core")
-check(shipped.AUDIO_PATH_ENABLED is True, "AUDIO_PATH_ENABLED is True")
-check(shipped.CAPTION_PATH_ENABLED is False,
-      f"CAPTION_PATH_ENABLED is False (got {shipped.CAPTION_PATH_ENABLED})")
-check(tuple(shipped.PATH_PREFERENCE)[0] == "audio",
-      f"and audio comes first in PATH_PREFERENCE ({shipped.PATH_PREFERENCE})")
+check(shipped.AUDIO_PATH_ENABLED is False, "AUDIO_PATH_ENABLED is False")
+check(shipped.CAPTION_PATH_ENABLED is True,
+      f"CAPTION_PATH_ENABLED is True (got {shipped.CAPTION_PATH_ENABLED})")
+check(tuple(shipped.PATH_PREFERENCE)[0] == "captions",
+      f"and captions come first in PATH_PREFERENCE ({shipped.PATH_PREFERENCE})")
+# Everything below drives the audio path, switched on the way a user switches it on.
 reset(captions_enabled=False, audio_enabled=True)
 check(ww.path_order() == ["audio"], f"so the only path is audio (got {ww.path_order()})")
 plan = ww.slot_plan()
@@ -238,7 +243,7 @@ check(plan["primary"] == "audio" and plan["fallback"] is None,
       f"and a run that never reached the gate still plans audio-only ({plan})")
 check(ww.path_blocked("captions") == "switched off", "captions report themselves switched off")
 
-print("\n=== A2. the default slot: the canary is a MEDIA probe, and no caption request "
+print("\n=== A2. an audio-only slot: the canary is a MEDIA probe, and no caption request "
       "is made anywhere in it ===")
 reset(captions_enabled=False, audio_enabled=True)
 proceed, out = quiet(ww.slot_may_proceed, "--channels")

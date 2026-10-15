@@ -29,6 +29,21 @@ BRAIN_WORDS = {
 }
 # In the order a key is looked for. Each names the service, so the doctor can say which.
 API_KEY_VARIABLES = ("GEMINI_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "GROQ_API_KEY")
+# The OpenAI-compatible services the api brain knows by name: where to send a chat completion,
+# which variable holds the key, and a model for the quick jobs and one to write. Each base URL,
+# key name and model was read on that service's own documentation on 2026-10-14. Models change:
+# settings.toml [brain] model and quick_model replace them.
+API_PROVIDERS = {
+    "gemini": {"env": "GEMINI_API_KEY",
+               "base": "https://generativelanguage.googleapis.com/v1beta/openai/",
+               "quick": "gemini-3.8-flash", "write": "gemini-3.8-flash"},
+    "openrouter": {"env": "OPENROUTER_API_KEY", "base": "https://openrouter.ai/api/v1",
+                   "quick": "~openai/gpt-sol-latest", "write": "~openai/gpt-sol-latest"},
+    "openai": {"env": "OPENAI_API_KEY", "base": "https://api.openai.com/v1",
+               "quick": "gpt-6-luna", "write": "gpt-6.1-sol"},
+    "groq": {"env": "GROQ_API_KEY", "base": "https://api.groq.com/openai/v1",
+             "quick": "llama-3.1-8b-instant", "write": "llama-3.3-70b-versatile"},
+}
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST_URL", "http://localhost:11434")
 # The order init suggests a brain in when nobody chooses: a tool you already have first, and agent
 # mode, which needs nothing, last.

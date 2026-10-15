@@ -27,6 +27,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _tmpsandbox
 ww = _tmpsandbox.import_core()
 ROOT = _tmpsandbox.sandbox(ww, "starter-first")
+# Section A drives the real audio fetch, which ships switched off: switched on here the way a
+# user switches it on ([transcripts] audio = true). The whole suite is an audio-only setup (its
+# fetches, the day's cap and the budgets it counts are all the audio path's), so captions are
+# off for it.
+ww.AUDIO_PATH_ENABLED = True
+ww.CAPTION_PATH_ENABLED = False
 
 fails = []
 

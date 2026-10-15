@@ -90,6 +90,15 @@ class Profile:
     assets: tuple = ()
     sign_word: str = ""
     brain: str = "agent"                   # see brains.py: agent, claude, codex, api, ollama
+    quick_brain: str = ""                  # the brain for the quick jobs; empty: the same one
+    brain_model: str = ""                  # the writing brain's model; empty: its default
+    quick_model: str = ""                  # the quick brain's model; empty: its default
+    api_provider: str = ""                 # api: gemini, openrouter, openai or groq
+    api_base_url: str = ""                 # api: any other OpenAI-compatible endpoint
+    api_key_env: str = ""                  # api: the variable holding that endpoint's key
+    audio: bool = False                    # the audio path, off unless switched on
+    jev_enabled: bool = False
+    jev_daily_cap: float = 1.00
     js_runtime: str = ""                   # empty: yt-dlp's default, Deno
     priority_channels: tuple = ()
     priority_daily_reserve: int = 3
@@ -147,12 +156,34 @@ def profile_from(settings, rules):
     p.assets = _strings(you.get("assets"), "[you] assets")
     p.sign_word = (you.get("sign_word") or "").strip()
     brain = settings.get("brain") or {}
-    kind = (brain.get("kind") or "agent").strip().lower()
     kinds = ("agent", "claude", "codex", "api", "ollama")
-    if kind not in kinds:
-        raise SettingsError(f"[brain] kind = \"{kind}\" is not one of {', '.join(kinds)}. Run "
-                            f"`worthwatch init --brain NAME` to choose one.")
-    p.brain = kind
+    kind = (brain.get("kind") or "agent").strip().lower()
+    quick = (brain.get("quick") or "").strip().lower()
+    for key, value in (("kind", kind), ("quick", quick)):
+        if value and value not in kinds:
+            raise SettingsError(f"[brain] {key} = \"{value}\" is not one of {', '.join(kinds)}. "
+                                f"Run `worthwatch init --brain NAME` to choose one.")
+    p.brain, p.quick_brain = kind, ("" if kind == "agent" else quick)
+    p.brain_model = (brain.get("model") or "").strip()
+    p.quick_model = (brain.get("quick_model") or "").strip()
+    p.api_provider = (brain.get("provider") or "").strip().lower()
+    providers = ("gemini", "openrouter", "openai", "groq")
+    if p.api_provider and p.api_provider not in providers:
+        raise SettingsError(f"[brain] provider = \"{p.api_provider}\" is not one of "
+                            f"{', '.join(providers)}; for any other service set base_url and "
+                            f"api_key_env instead.")
+    p.api_base_url = (brain.get("base_url") or "").strip()
+    p.api_key_env = (brain.get("api_key_env") or "").strip()
+    p.audio = bool((settings.get("transcripts") or {}).get("audio", False))
+    jev = settings.get("jev") or {}
+    p.jev_enabled = bool(jev.get("enabled", False))
+    try:
+        p.jev_daily_cap = float(jev.get("daily_cap_usd", 1.00))
+    except (TypeError, ValueError):
+        raise SettingsError("[jev] daily_cap_usd should be a number of dollars, like 1.00") from None
+    if not 0 <= p.jev_daily_cap <= 5.00:
+        raise SettingsError(f"[jev] daily_cap_usd = {p.jev_daily_cap} is outside 0 to 5.00 dollars "
+                            f"a day; worthwatch will not spend more than that on Jev.")
     p.js_runtime = ((settings.get("youtube") or {}).get("js_runtime") or "").strip().lower()
     labels = set(p.labels)
     aliases = you.get("aliases") or {}

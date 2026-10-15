@@ -206,6 +206,8 @@ check(record.get("no_speech") == "no_text" and triage_calls == [False] and not c
       "one state for both, and nothing spent after the listing")
 
 print("\n  the audio path puts the length in that error, so the row can say it")
+# The real audio fetch, which ships switched off; switched on here as a user would.
+ww.AUDIO_PATH_ENABLED = True
 ww.extract_media_info = lambda url: ({"id": "MaraMusic02", "title": "t", "uploader": "u"}, None)
 ww.choose_audio_format = lambda info: ({"format_id": "91", "audio_only": False, "height": 144,
                                          "ext": "mp4", "acodec": "mp4a.40.5", "abr": 115.1,

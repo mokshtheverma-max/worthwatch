@@ -100,7 +100,20 @@ def cmd_init(argv, env=None):
     else:
         found = brains.detect()
         if sys.stdin is not None and sys.stdin.isatty():
-            kind, why = ask_brain(found), "your choice"
+            answers = []
+
+            def reading(prompt):
+                line = input(prompt)          # EOFError when nobody is there to answer
+                answers.append(line)
+                return line
+
+            kind = ask_brain(found, input_fn=reading)
+            if answers and answers[-1].strip():
+                why = "your choice"
+            elif answers:
+                why = "the suggestion, which you accepted"
+            else:
+                why = f"nobody answered, so the first one this machine has ({found[kind][1]})"
         else:
             kind = choose_brain(found)
             why = f"the first one this machine has ({found[kind][1]})"
