@@ -88,7 +88,13 @@ STATE_PATHS = ("SEEN_PATH", "HISTORY_PATH", "RECORDS_PATH", "LAST_RUN_PATH",
                "BACKLOG_PATH", "RATE_STATE_PATH", "ROTATION_PATH", "LOCK_PATH",
                "REQUEST_LOG_PATH", "TRANSCRIPTS_DIR", "JEV_SPEND_PATH", "IDEAS_PATH")
 LOCK_STALE_SECONDS = 3600
-YT_DLP = str(Path(sys.executable).parent / "Scripts" / "yt-dlp.exe")
+# yt-dlp is the installed Python package, run with the same Python as this tool. Command lists
+# start with this name; run_yt_dlp() puts yt_dlp_argv() in its place at launch.
+YT_DLP = "yt-dlp"
+
+
+def yt_dlp_argv():
+    return [sys.executable, "-m", "yt_dlp"]
 
 # --- what every YouTube request looks like ------------------------------------------
 # yt-dlp's own client, on purpose: no browser fingerprint, no account, no token provider and
@@ -97,9 +103,21 @@ YT_DLP = str(Path(sys.executable).parent / "Scripts" / "yt-dlp.exe")
 # Manifests are separate requests (one each for DASH and HLS) made only to describe formats the
 # caption path never downloads, so that path skips them: fewer requests, the same captions.
 EXTRACTOR_SKIP = "dash,hls"
-# yt-dlp needs a JavaScript runtime to solve the player's challenges. Deno is yt-dlp's default;
-# any other runtime has to be named.
-JS_RUNTIME = "node"
+# yt-dlp needs a JavaScript runtime to solve the player's challenges. Its README recommends Deno,
+# the only runtime it switches on by default, and worthwatch installs Deno through yt-dlp's own
+# `deno` extra, into the scripts folder yt-dlp looks in first. So the default names nothing.
+# settings.toml [youtube] js_runtime can name node, bun or quickjs instead.
+JS_RUNTIME = ""
+
+
+def js_runtime_flags(runtime=None):
+    """The command-line flags for a JavaScript runtime other than yt-dlp's default, the way its
+    README says: --no-js-runtimes first, or a lower-priority runtime is ignored while Deno is
+    there."""
+    runtime = (JS_RUNTIME if runtime is None else runtime or "").strip()
+    if not runtime or runtime == "deno":
+        return []
+    return ["--no-js-runtimes", "--js-runtimes", runtime]
 
 # --- rate-limit policy --------------------------------------------------------------
 # Polite by default, and measured rather than guessed. Every request is logged with its type,
@@ -680,9 +698,7 @@ def client_flags():
     # one itself, and says so. yt-dlp picks YouTube's client itself; worthwatch never names one.
     on_audio = _CLIENT_PATH["path"] == "audio"
     skip = AUDIO_EXTRACTOR_SKIP if on_audio else EXTRACTOR_SKIP
-    flags = ["--ignore-no-formats-error"]
-    if JS_RUNTIME:
-        flags += ["--js-runtimes", JS_RUNTIME]
+    flags = ["--ignore-no-formats-error"] + js_runtime_flags()
     if skip:
         flags += ["--extractor-args", f"youtube:skip={skip}"]
     return flags
@@ -844,13 +860,37 @@ def polite_delay(seconds=REQUEST_DELAY_SECONDS):
     time.sleep(seconds)
 
 
+def group_kwargs(os_name=None):
+    """Popen keywords that let kill_tree() take a child and everything it starts. On macOS and
+    Linux the child gets its own process group; Windows needs nothing, kill_tree() walks the
+    tree there."""
+    return {} if (os_name or os.name) == "nt" else {"start_new_session": True}
+
+
+def kill_tree(proc, os_name=None, run=None, os_module=None):
+    """Kill a child process and every process it started.
+
+    A JavaScript runtime that yt-dlp starts for the player's challenges, or a model CLI's own
+    helpers, can outlive the child and hold its output pipe open; killing only the child then
+    leaves communicate() waiting forever (a run once sat idle for minutes past its timeout). So
+    the whole tree goes: taskkill /T on Windows, the child's process group elsewhere (started
+    with group_kwargs())."""
+    run = run or subprocess.run
+    os_module = os_module or os
+    if (os_name or os.name) == "nt":
+        run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)
+        return
+    import signal
+    try:
+        os_module.killpg(os_module.getpgid(proc.pid), getattr(signal, "SIGKILL", signal.SIGTERM))
+    except (OSError, AttributeError):
+        try:
+            proc.kill()
+        except OSError:
+            pass
+
+
 def run_yt_dlp(cmd, timeout=120):
-    # --js-runtimes node makes yt-dlp spawn a node.exe child for challenge-solving. If
-    # that grandchild outlives yt-dlp.exe, it can still hold the inherited stdout/stderr
-    # pipe open, and plain subprocess.run(timeout=...) kills only the direct child, then
-    # blocks forever on an unbounded communicate() retry waiting for the pipe to close
-    # (observed: a run sat at 0% CPU/GPU for minutes past its timeout). taskkill /T kills
-    # the whole tree, which actually frees the pipe.
     # The client flags are applied here, not at the call sites, for the same reason the
     # 429 is detected here: a call site that forgets one is a request nothing downstream can
     # describe.
@@ -860,18 +900,19 @@ def run_yt_dlp(cmd, timeout=120):
         # verbose stderr is where the challenge-solver facts are
         cmd = [cmd[0], "-v"] + cmd[1:]
     kind, endpoint, video_id = request_kind_of(cmd)
+    argv = (yt_dlp_argv() if cmd[0] == YT_DLP else [cmd[0]]) + list(cmd[1:])
 
     # Every yt-dlp call goes through here, so this is the one place that can honestly
     # promise a minimum gap between requests. Doing it per-caller was the old design and
     # it missed the metadata probes entirely, which were most of the traffic.
     gap = wait_for_request_slot()
     started = dt.datetime.now()
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                             text=True, encoding="utf-8", errors="replace")
+    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             text=True, encoding="utf-8", errors="replace", **group_kwargs())
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)
+        kill_tree(proc)
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
@@ -1372,8 +1413,8 @@ _WHISPER = {"model": None, "key": None}
 _CUDA_DLL_DIRS = []      # the add_dll_directory handles, kept alive: see below
 
 
-def _add_cuda_dll_dirs():
-    """Make CTranslate2 able to find cuBLAS and cuDNN. pip puts them in
+def _add_cuda_dll_dirs(os_name=None):
+    """Windows only: make CTranslate2 able to find cuBLAS and cuDNN. pip puts them in
     site-packages/nvidia/*/bin, which is on no search path Windows uses by default, and
     the failure is a bare "Library cublas64_12.dll is not found or cannot be loaded" at
     model-construction time - not at import, which is what makes it look like a GPU
@@ -1391,8 +1432,21 @@ def _add_cuda_dll_dirs():
          to PATH.
       3. Loading the three libraries by absolute path up front. Once a module is in the
          process, a later LoadLibrary("cublas64_12.dll") resolves to it however it was
-         asked for. This is the one that cannot be defeated by search-path semantics."""
-    root = Path(sys.executable).parent.parent / "Lib" / "site-packages" / "nvidia"
+         asked for. This is the one that cannot be defeated by search-path semantics.
+
+    On macOS and Linux it does nothing: the libraries are found the usual way there."""
+    if (os_name or os.name) != "nt":
+        return []
+    root = None
+    try:
+        import importlib.util
+        spec = importlib.util.find_spec("nvidia")
+        if spec and spec.submodule_search_locations:
+            root = Path(list(spec.submodule_search_locations)[0])
+    except (ImportError, ValueError):
+        root = None
+    if root is None:
+        root = Path(sys.executable).parent.parent / "Lib" / "site-packages" / "nvidia"
     bins = sorted(root.glob("*/bin"))
     if not bins:
         return []
@@ -2450,11 +2504,11 @@ def claude_generate(prompt, timeout=600):
         raise RuntimeError("claude CLI not found on PATH.")
     proc = subprocess.Popen([claude_path, "-p", "--model", "sonnet"], stdin=subprocess.PIPE,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                             text=True, encoding="utf-8", errors="replace")
+                             text=True, encoding="utf-8", errors="replace", **group_kwargs())
     try:
         stdout, stderr = proc.communicate(input=prompt, timeout=timeout)
     except subprocess.TimeoutExpired:
-        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)
+        kill_tree(proc)
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
@@ -10438,11 +10492,11 @@ def claude_generate_with(prompt, model, timeout=600):
         raise RuntimeError("claude CLI not found on PATH.")
     proc = subprocess.Popen([claude_path, "-p", "--model", model], stdin=subprocess.PIPE,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            text=True, encoding="utf-8", errors="replace")
+                            text=True, encoding="utf-8", errors="replace", **group_kwargs())
     try:
         stdout, stderr = proc.communicate(input=prompt, timeout=timeout)
     except subprocess.TimeoutExpired:
-        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)
+        kill_tree(proc)
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
@@ -11175,11 +11229,29 @@ def ensure_one_sentence(text, model):
         return text
 
 
-def copy_to_clipboard(text):
-    try:
-        subprocess.run(["clip.exe"], input=text.encode("utf-8"), check=True)
-    except Exception as e:
-        print(f"(could not copy to clipboard: {e})")
+def copy_to_clipboard(text, platform=None, which=None, run=None):
+    """(copied, how): the text on the clipboard with the system's own tool, clip on Windows,
+    pbcopy on macOS, wl-copy, xclip or xsel on Linux. With none of them, nothing runs and the
+    second value says what to install."""
+    platform = platform or sys.platform
+    which = which or shutil.which
+    run = run or subprocess.run
+    if platform.startswith("win"):
+        choices = [["clip"]]
+    elif platform == "darwin":
+        choices = [["pbcopy"]]
+    else:
+        choices = [["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"]]
+    for argv in choices:
+        if which(argv[0]):
+            try:
+                run(argv, input=text.encode("utf-8"), check=True)
+                return True, argv[0]
+            except (OSError, subprocess.CalledProcessError) as e:
+                return False, f"{argv[0]} failed: {e}"
+    return False, ("no clipboard tool was found; install wl-clipboard or xclip to copy "
+                   "automatically" if not platform.startswith(("win", "darwin"))
+                   else "no clipboard tool was found")
 
 
 def save_writeup(meta, summary_text, backend_label, elapsed, chunked):
@@ -11351,10 +11423,11 @@ def process_video(url, context_text, use_claude, compare, model_override):
             default_summary, default_label = local_summary, f"local:{model}"
             default_elapsed, default_chunked = local_elapsed, local_chunked
         md_path = save_writeup(meta, default_summary, default_label, default_elapsed, default_chunked)
-        copy_to_clipboard(default_summary)
+        copied, how = copy_to_clipboard(default_summary)
         print(f"\nSaved ({default_label}, the default backend): {md_path}")
         print(f"Raw transcript: {meta['raw_path']}")
-        print(f"{'Claude' if is_technical_video(meta) else 'Local'} summary copied to clipboard.")
+        print(f"{'Claude' if is_technical_video(meta) else 'Local'} summary copied to clipboard."
+              if copied else f"(not copied to the clipboard: {how})")
         return {"status": "ok", "id": meta["id"], "title": meta["title"]}
 
     if use_claude or is_technical_video(meta):
@@ -11396,10 +11469,10 @@ def process_video(url, context_text, use_claude, compare, model_override):
     print(f"({model_label}, {elapsed:.1f}s{' [chunked]' if chunked else ''})")
 
     md_path = save_writeup(meta, summary, model_label, elapsed, chunked)
-    copy_to_clipboard(summary)
+    copied, how = copy_to_clipboard(summary)
     print(f"Saved: {md_path}")
     print(f"Raw transcript: {meta['raw_path']}")
-    print("Copied to clipboard.")
+    print("Copied to clipboard." if copied else f"(not copied to the clipboard: {how})")
     return {"status": "ok", "id": meta["id"], "title": meta["title"]}
 
 
@@ -11522,6 +11595,38 @@ CONTEXT_STALE_DAYS = 7
 # (see scoring.py). When it is there, doctor scores the stored write-ups against it, and a
 # score under the floor you set ([labels] floor_yes_precision and floor_yes_recall) is red.
 GOLDEN_FLOOR = {}
+# Which brain judges the videos (brains.py); settings.toml [brain] kind sets it.
+BRAIN = "agent"
+# The first lines of the example person's context file say this; a context file that still
+# does is not the reader's own yet.
+EXAMPLE_CONTEXT_MARKER = "> EXAMPLE."
+REINSTALL_FIX = "uv tool install --reinstall worthwatch   (or pip install --upgrade worthwatch)"
+
+
+def doctor_ytdlp():
+    """yt-dlp's installed version, or None."""
+    return package_version("yt-dlp")
+
+
+def doctor_js_runtime():
+    """(found, where) for the JavaScript runtime yt-dlp will use: the one settings name, else
+    Deno, looked for where yt-dlp looks first (this Python's scripts folder), then on the PATH.
+    Starts no program."""
+    import sysconfig
+    name = JS_RUNTIME or "deno"
+    exe = name + (sysconfig.get_config_var("EXE") or "")
+    beside = Path(sysconfig.get_path("scripts")) / exe
+    if beside.is_file():
+        return True, f"{name}, in this Python's scripts folder (installed with worthwatch)"
+    found = shutil.which(name)
+    if found:
+        return True, f"{name}, at {found}"
+    return False, f"{name} was not found in this Python's scripts folder or on the PATH"
+
+
+def doctor_brains():
+    from . import brains
+    return brains.detect()
 
 
 def doctor_ollama_models():
@@ -11578,6 +11683,41 @@ def doctor_checks(now=None):
     now = now or dt.datetime.now()
     out = []
 
+    version = doctor_ytdlp()
+    out.append((bool(version), "yt-dlp",
+                f"{version} is installed (it reads YouTube for worthwatch)" if version
+                else "yt-dlp is not installed, so nothing can be read from YouTube",
+                None if version else REINSTALL_FIX))
+    ok, what = ejs_status()
+    out.append((ok, "YouTube challenge solver", what, None if ok else REINSTALL_FIX))
+    ok, what = doctor_js_runtime()
+    out.append((ok, "JavaScript runtime", what + ("" if ok else "; yt-dlp needs one to read YouTube"),
+                None if ok else "Deno comes with worthwatch, so reinstall it: " + REINSTALL_FIX
+                + ". Or install Deno from https://deno.com, or, if you have Node.js, put "
+                  "js_runtime = \"node\" under [youtube] in settings.toml"))
+
+    found = doctor_brains()
+    ok, how = found.get(BRAIN, (False, f"{BRAIN} is not a brain worthwatch knows"))
+    if BRAIN == "agent":
+        how = ("agent mode: your own AI agent does the judging, through `worthwatch mcp`; "
+               "worthwatch calls no model itself")
+    out.append((ok, "brain", f"{BRAIN}: {how}",
+                None if ok else f"install it, or choose another brain with `worthwatch init "
+                                f"--brain NAME` (agent, claude, codex, api, ollama)"))
+
+    missing = [f"{n} ({p})" for n, p in (("config", CONFIG_DIR), ("data", DATA_DIR),
+                                          ("output", OUTPUT_DIR)) if not Path(p).is_dir()]
+    unwritable = [str(p) for p in (CONFIG_DIR, DATA_DIR, OUTPUT_DIR)
+                  if Path(p).is_dir() and not os.access(p, os.W_OK)]
+    ok = not missing and not unwritable
+    out.append((ok, "folders",
+                f"config {CONFIG_DIR}, data {DATA_DIR}, output {OUTPUT_DIR}" if ok
+                else ("not made yet: " + ", ".join(missing) if missing
+                      else "cannot be written to: " + ", ".join(unwritable)),
+                None if ok else ("run `worthwatch init`" if missing
+                                 else "give your user permission to write there, or move the "
+                                      "folder with [paths] in settings.toml")))
+
     try:
         models = doctor_ollama_models()
         ok = DEFAULT_LOCAL_MODEL in models
@@ -11615,13 +11755,29 @@ def doctor_checks(now=None):
 
     if CONTEXT_PATH.exists():
         days = (now.date() - dt.date.fromtimestamp(CONTEXT_PATH.stat().st_mtime)).days
-        ok = days <= CONTEXT_STALE_DAYS
-        out.append((ok, "context file", f"last updated {context_age_words(days)}",
-                    None if ok else f"update {CONTEXT_PATH} with what has changed; the verdicts "
-                                    f"are judged against it"))
+        if EXAMPLE_CONTEXT_MARKER in CONTEXT_PATH.read_text(encoding="utf-8", errors="replace")[:600]:
+            out.append((False, "context file", "still the example person's, so every verdict "
+                                               "would be judged for someone who does not exist",
+                        f"open {CONTEXT_PATH} and replace the example with yourself: your "
+                        f"projects, what you have tried, what you have decided"))
+        else:
+            ok = days <= CONTEXT_STALE_DAYS
+            out.append((ok, "context file", f"last updated {context_age_words(days)}",
+                        None if ok else f"update {CONTEXT_PATH} with what has changed; the "
+                                        f"verdicts are judged against it"))
     else:
         out.append((False, "context file", f"missing ({CONTEXT_PATH})",
                     "run `worthwatch init`, then make the context file about you"))
+
+    channels = len(read_channel_urls())
+    searches = (len([l for l in TOPICS_PATH.read_text(encoding="utf-8").splitlines()
+                     if l.strip() and not l.strip().startswith("#")])
+                if TOPICS_PATH.exists() else 0)
+    out.append((bool(channels or searches), "channels",
+                f"{channels} channel(s) and {searches} search(es) to check",
+                None if channels or searches else
+                f"put the channels you follow in {CHANNELS_PATH}, one link a line, or searches "
+                f"in {TOPICS_PATH}, one a line"))
 
     if LABELS_PATH.exists():
         try:
@@ -11662,18 +11818,19 @@ def context_age_words(days):
 
 
 def cmd_doctor(now=None):
-    """`worthwatch doctor`: every check, green or red, and what to do for anything red. Read
-    only."""
+    """`worthwatch doctor`: every check in plain words, and how to fix anything that needs it.
+    Read only."""
     now = now or dt.datetime.now()
     checks = doctor_checks(now=now)
-    print(f"worthwatch doctor, {now:%Y-%m-%d %H:%M}, read only")
+    print(f"worthwatch doctor, {now:%Y-%m-%d %H:%M}. It only looks; it changes nothing.")
     for ok, name, detail, fix in checks:
-        print(f"  {'green' if ok else 'RED  '} {name}: {detail}")
+        print(f"  {'OK ' if ok else 'FIX'}  {name}: {detail}")
         if fix:
-            print(f"        to fix: {fix}")
-    red = sum(1 for c in checks if not c[0])
-    print(f"{'All green' if not red else f'{red} red'}; nothing was changed.")
-    return 0 if not red else 1
+            print(f"       How to fix: {fix}")
+    need = sum(1 for c in checks if not c[0])
+    print("Everything is ready. Nothing was changed." if not need else
+          f"{need} thing(s) need fixing; each says how above. Nothing was changed.")
+    return 0 if not need else 1
 
 
 # --- your settings ---------------------------------------------------------------------------
@@ -11697,6 +11854,8 @@ def apply_profile(profile):
     g["PEOPLE_IN_CONTEXT"] = profile.people
     g["IDEA_ASSETS"] = profile.assets
     g["SIGN_WORD"] = profile.sign_word
+    g["BRAIN"] = profile.brain
+    g["JS_RUNTIME"] = profile.js_runtime
     g["FAVOURITE_CHANNELS"] = profile.priority_channels
     g["FAVOURITE_DAILY_RESERVE"] = profile.priority_daily_reserve
     g["CHANNEL_DAILY_CAP"] = profile.channel_daily_cap
@@ -11751,6 +11910,17 @@ def main():
     # Without this, a log can sit empty for the whole run and lose everything on a crash.
     sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
     sys.stderr.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+    # Before the settings are read: --version needs none, and init makes them.
+    if sys.argv[1:2] == ["--version"]:
+        print(f"worthwatch {__version__}")
+        sys.exit(0)
+    if sys.argv[1:2] == ["init"]:
+        from . import firstrun
+        try:
+            sys.exit(firstrun.cmd_init(sys.argv[2:]))
+        except _settings.SettingsError as e:
+            print(f"STOPPED: {e}")
+            sys.exit(2)
     try:
         configure()
     except _settings.SettingsError as e:
@@ -11781,9 +11951,19 @@ def main():
     if len(sys.argv) >= 2 and sys.argv[1] in ("resummarize", "resummarise"):
         sys.exit(cmd_resummarize(sys.argv[2:]) or 0)
 
-    parser = argparse.ArgumentParser(prog="worthwatch",
-                                     description="Is this video worth watching, for you? Judges "
-                                                 "videos against your own context file.")
+    parser = argparse.ArgumentParser(
+        prog="worthwatch",
+        description="Is this video worth watching, for you? Judges videos against your own "
+                    "context file.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="commands:\n"
+               "  worthwatch init      make the folders and starter files, choose a brain\n"
+               "  worthwatch doctor    check everything a run needs, in plain words (read only)\n"
+               "  worthwatch status    what the tool is doing and waiting for\n"
+               "  worthwatch pause | resume   stop or restart the runs\n"
+               "  worthwatch like | nah ID    tell the idea board what you think of an idea\n"
+               "  worthwatch remix [today]    remix the day's ideas\n"
+               "  worthwatch --version")
     parser.add_argument("urls", nargs="*", help="one or more YouTube URLs")
     parser.add_argument("--file", help="path to a text file of URLs, one per line "
                                         "(with --rollup: which batch to roll up)")

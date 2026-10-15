@@ -84,8 +84,8 @@ for name, fn in CASES:
     check(bool(launched), f"{name} launched at least one yt-dlp call")
     bad = [a for argv in launched for a in argv if FORBIDDEN.search(a)]
     check(not bad, f"{name}: nothing that disguises the request ({bad})")
-    check(all("--js-runtimes" in argv for argv in launched),
-          f"{name}: and the JavaScript runtime yt-dlp's own README asks for is named")
+    check(all("--js-runtimes" not in argv for argv in launched),
+          f"{name}: and no runtime flag, so yt-dlp uses Deno, the runtime its README recommends")
 
 print("\n=== B. the audio path asks plainly too ===")
 launched.clear()

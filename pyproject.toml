@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "worthwatch"
+version = "0.1.0"
+description = "Checks the YouTube channels you follow and tells you which videos are worth your time, judged against your own projects."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "Moksh Verma" }]
+keywords = ["youtube", "transcripts", "digest", "mcp", "agents", "yt-dlp"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Multimedia :: Video",
+]
+dependencies = [
+    # yt-dlp reads YouTube. Its "default" extra brings yt-dlp-ejs, which its README says YouTube
+    # needs, and its "deno" extra brings Deno, the JavaScript runtime its README recommends.
+    "yt-dlp[default,deno]>=2026.7.4",
+]
+
+[project.optional-dependencies]
+# Transcribing a video's audio on your own machine, for videos without captions. Downloading
+# audio may break YouTube's terms of service: it is off unless you switch it on.
+whisper = ["faster-whisper>=1.1", "av>=12"]
+# What the test suite needs beyond the package itself.
+dev = ["av>=12", "numpy", "pyflakes"]
+
+[project.scripts]
+worthwatch = "worthwatch.__main__:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/worthwatch"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "scripts", "README.md", "LICENSE", "pyproject.toml"]

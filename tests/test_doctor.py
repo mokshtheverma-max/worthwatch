@@ -45,6 +45,7 @@ def line(checks, name):
 
 
 # The probes, each a function doctor_checks calls; stubbed here one at a time.
+ALL_BRAINS = {k: (True, f"{k} is there") for k in ("agent", "claude", "codex", "api", "ollama")}
 GOOD = {
     "doctor_ollama_models": lambda: [ww.DEFAULT_LOCAL_MODEL, "another-model:7b"],
     "doctor_gpu": lambda: {"name": "Example GPU", "total_mib": 16303, "free_mib": 14500},
@@ -52,11 +53,19 @@ GOOD = {
     "disk_free_bytes": lambda path=None: 700 * 10 ** 9,
     "doctor_golden": lambda: {"yes_precision": 0.8, "yes_recall": 0.9, "projects_found": 3,
                               "projects_total": 3},
+    "doctor_ytdlp": lambda: "2026.7.4",
+    "ejs_status": lambda: (True, "yt-dlp-ejs 0.8.0"),
+    "doctor_js_runtime": lambda: (True, "deno, at the scripts folder of this Python"),
+    "doctor_brains": lambda: dict(ALL_BRAINS),
 }
 for name, fn in GOOD.items():
     setattr(ww, name, fn)
 ww.AUDIO_PATH_ENABLED = True
+ww.BRAIN = "claude"
 ww.LABELS_PATH.write_text('{"videos": []}', encoding="utf-8")
+# A context file of the reader's own, not the example person's.
+ww.CONTEXT_PATH.write_text("# My context\n\nI make pottery and sell it online.\n", encoding="utf-8")
+ww.CHANNELS_PATH.write_text("https://www.youtube.com/@example-pottery\n", encoding="utf-8")
 t = (NOW - ww.dt.timedelta(days=1)).timestamp()
 os.utime(ww.CONTEXT_PATH, (t, t))
 ww.save_records({})
@@ -69,8 +78,9 @@ for ok, name, detail, fix in checks:
     print(f"    {'green' if ok else 'RED  '} {name}: {detail}")
 check(all(c[0] for c in checks), "every line is green")
 names = [c[1] for c in checks]
-for needed in ("Ollama", "transcriber", "disk", "context file", "score against your labels",
-               "state files"):
+for needed in ("yt-dlp", "YouTube challenge solver", "JavaScript runtime", "brain", "folders",
+               "Ollama", "transcriber", "disk", "context file", "channels",
+               "score against your labels", "state files"):
     check(needed in names, f"there is a line for {needed}")
 out = io.StringIO()
 real, sys.stdout = sys.stdout, out
@@ -78,8 +88,11 @@ try:
     code = ww.cmd_doctor(now=NOW)
 finally:
     sys.stdout = real
-check(code == 0 and "All green" in out.getvalue() and "nothing was changed" in out.getvalue(),
-      f"exit 0, and it says all green and that nothing was changed ({code})")
+said = out.getvalue()
+check(code == 0 and "Everything is ready" in said and "Nothing was changed" in said,
+      f"exit 0, and it says everything is ready and that nothing was changed ({code})")
+check("OK" in said and "RED" not in said and "green" not in said,
+      "in plain words: OK, not colours")
 
 print("\n=== B. each check goes red on its own, and says what to do ===")
 
@@ -108,6 +121,45 @@ red_with("transcriber", "doctor_gpu",
 red_with("transcriber", "doctor_whisper_ready",
          lambda: (False, "faster-whisper is not installed"), "worthwatch[whisper]")
 red_with("disk", "disk_free_bytes", lambda path=None: 1 * 10 ** 9, "", "1.0 GB free")
+red_with("yt-dlp", "doctor_ytdlp", lambda: None, "uv tool install --reinstall worthwatch",
+         "not installed")
+red_with("YouTube challenge solver", "ejs_status",
+         lambda: (False, "yt-dlp-ejs is not installed"), "uv tool install --reinstall worthwatch")
+red_with("JavaScript runtime", "doctor_js_runtime",
+         lambda: (False, "deno was not found"), "js_runtime", "deno")
+
+print("\n  the brain you chose")
+red_with("brain", "doctor_brains",
+         lambda: dict(ALL_BRAINS, claude=(False, "`claude` is not installed")),
+         "worthwatch init --brain", "claude")
+ww.BRAIN = "agent"
+ok, detail, fix = line(ww.doctor_checks(now=NOW), "brain")
+check(ok and "mcp" in detail.lower(), f"agent mode needs no model, and says how to connect ({detail})")
+ww.BRAIN = "claude"
+
+print("\n  the folders, the context file and the channels")
+saved_config = ww.CONFIG_DIR
+ww.CONFIG_DIR = ww.CONFIG_DIR.parent / "not-made-yet"
+ok, detail, fix = line(ww.doctor_checks(now=NOW), "folders")
+check(not ok and "worthwatch init" in fix, f"a config folder that is not there says run init ({detail})")
+ww.CONFIG_DIR = saved_config
+mine = ww.CONTEXT_PATH.read_text(encoding="utf-8")
+ww.CONTEXT_PATH.write_text((ww._settings.EXAMPLES_DIR / "context.md").read_text(encoding="utf-8"),
+                           encoding="utf-8")
+os.utime(ww.CONTEXT_PATH, ((NOW - ww.dt.timedelta(days=1)).timestamp(),) * 2)
+ok, detail, fix = line(ww.doctor_checks(now=NOW), "context file")
+check(not ok and "example" in detail and str(ww.CONTEXT_PATH) in fix,
+      f"a context file that is still the example person's is red, and says where yours goes ({detail})")
+ww.CONTEXT_PATH.write_text(mine, encoding="utf-8")
+os.utime(ww.CONTEXT_PATH, ((NOW - ww.dt.timedelta(days=1)).timestamp(),) * 2)
+ww.CHANNELS_PATH.write_text("# one link a line\n", encoding="utf-8")
+ww.TOPICS_PATH.write_text("# one search a line\n", encoding="utf-8")
+ok, detail, fix = line(ww.doctor_checks(now=NOW), "channels")
+check(not ok and str(ww.CHANNELS_PATH) in fix, f"no channel and no search is red ({detail})")
+ww.TOPICS_PATH.write_text("bookkeeping for bakeries\n", encoding="utf-8")
+ok, detail, fix = line(ww.doctor_checks(now=NOW), "channels")
+check(ok and "1 search" in detail, f"CONTROL: one search is enough to run on ({detail})")
+ww.CHANNELS_PATH.write_text("https://www.youtube.com/@example-pottery\n", encoding="utf-8")
 
 saved_gpu = ww.doctor_gpu
 ww.doctor_gpu = lambda: None
@@ -166,10 +218,11 @@ real_run = subprocess.run
 ww = importlib.reload(ww)             # the real probes again, not the stubs above
 real_root = _tmpsandbox.sandbox(ww, "doctor-real")
 ww.save_records({})
-# Ollama is asked over the local network (port 11434), which this suite refuses, and the score
-# reads a labels file: neither starts a command, so both are stubbed to keep this about commands.
-# The transcriber is said to be ready so that the real GPU probe runs.
+# Ollama is asked over the local network (port 11434), and so is the brain finder's Ollama
+# check; the score reads a labels file. None of them starts a command, so they are stubbed to
+# keep this about commands. The transcriber is said to be ready so that the real GPU probe runs.
 ww.doctor_ollama_models = GOOD["doctor_ollama_models"]
+ww.doctor_brains = GOOD["doctor_brains"]
 ww.doctor_golden = GOOD["doctor_golden"]
 ww.doctor_whisper_ready = GOOD["doctor_whisper_ready"]
 ww.AUDIO_PATH_ENABLED = True

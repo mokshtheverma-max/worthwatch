@@ -13,9 +13,10 @@ every test suite with the example profile of an invented person.
 """
 import os
 import re
+import sys
 import tomllib
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 APP = "worthwatch"
 ROAD_NOT_TAKEN = "a road not taken"
@@ -88,6 +89,8 @@ class Profile:
     people: tuple = ()                     # lower case
     assets: tuple = ()
     sign_word: str = ""
+    brain: str = "agent"                   # see brains.py: agent, claude, codex, api, ollama
+    js_runtime: str = ""                   # empty: yt-dlp's default, Deno
     priority_channels: tuple = ()
     priority_daily_reserve: int = 3
     channel_daily_cap: int = 3
@@ -143,6 +146,14 @@ def profile_from(settings, rules):
     p.people = tuple(n.lower() for n in _strings(you.get("people"), "[you] people"))
     p.assets = _strings(you.get("assets"), "[you] assets")
     p.sign_word = (you.get("sign_word") or "").strip()
+    brain = settings.get("brain") or {}
+    kind = (brain.get("kind") or "agent").strip().lower()
+    kinds = ("agent", "claude", "codex", "api", "ollama")
+    if kind not in kinds:
+        raise SettingsError(f"[brain] kind = \"{kind}\" is not one of {', '.join(kinds)}. Run "
+                            f"`worthwatch init --brain NAME` to choose one.")
+    p.brain = kind
+    p.js_runtime = ((settings.get("youtube") or {}).get("js_runtime") or "").strip().lower()
     labels = set(p.labels)
     aliases = you.get("aliases") or {}
     if not isinstance(aliases, dict):
@@ -219,17 +230,45 @@ def example_profile():
     return load_profile(EXAMPLES_DIR)
 
 
-def resolve_dirs(env=None, settings=None):
-    """(config, data, output) folders. WORTHWATCH_HOME puts all three under one folder; each
-    has its own environment variable too; settings.toml's [paths] can move data and output."""
+def default_dirs(platform=None, env=None, home=None):
+    """(config, data, output) when nothing is set, by operating system.
+
+      Windows  config in %APPDATA%\\worthwatch, data in %LOCALAPPDATA%\\worthwatch
+      macOS    both in ~/Library/Application Support/worthwatch (data in its data folder)
+      Linux    $XDG_CONFIG_HOME/worthwatch (~/.config) and $XDG_DATA_HOME/worthwatch
+               (~/.local/share); a relative XDG folder is ignored, as the XDG rules say
+      and the output, the digests you read, in Documents/worthwatch on every system."""
+    platform = platform or sys.platform
     env = os.environ if env is None else env
-    home = env.get("WORTHWATCH_HOME")
-    if home:
-        base = Path(home).expanduser()
+    home = Path(home) if home else Path.home()
+    output = home / "Documents" / APP
+    if platform.startswith("win"):
+        roaming = Path(env.get("APPDATA") or home / "AppData" / "Roaming")
+        local = Path(env.get("LOCALAPPDATA") or home / "AppData" / "Local")
+        return roaming / APP, local / APP, output
+    if platform == "darwin":
+        support = home / "Library" / "Application Support" / APP
+        return support, support / "data", output
+
+    def xdg(name, fallback):
+        value = env.get(name) or ""
+        return Path(value) if value and PurePosixPath(value).is_absolute() else fallback
+
+    return (xdg("XDG_CONFIG_HOME", home / ".config") / APP,
+            xdg("XDG_DATA_HOME", home / ".local" / "share") / APP, output)
+
+
+def resolve_dirs(env=None, settings=None, platform=None, home=None):
+    """(config, data, output) folders. WORTHWATCH_HOME puts all three under one folder; each
+    has its own environment variable too; settings.toml's [paths] can move data and output.
+    Otherwise default_dirs() for this operating system."""
+    env = os.environ if env is None else env
+    portable = env.get("WORTHWATCH_HOME")
+    if portable:
+        base = Path(portable).expanduser()
         config, data, output = base, base / "data", base / "output"
     else:
-        base = Path.home() / APP
-        config, data, output = base, base / "data", base / "output"
+        config, data, output = default_dirs(platform, env, home)
     config = Path(env.get("WORTHWATCH_CONFIG_DIR") or config).expanduser()
     paths = (settings or {}).get("paths") or {}
     data = Path(env.get("WORTHWATCH_DATA_DIR") or paths.get("data") or data).expanduser()

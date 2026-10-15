@@ -437,7 +437,7 @@ print("\n=== G. a hand-run URL follows the same plan as a scheduled slot ===")
 # `worthwatch --file` asked /api/timedtext whatever the gate had just decided one frame up.
 reset(captions_enabled=False, audio_enabled=True)
 args = types.SimpleNamespace(claude=False, compare=False, model=None, no_canary=False)
-ww.copy_to_clipboard = lambda *a, **k: None
+ww.copy_to_clipboard = lambda *a, **k: (False, "not copied inside a test")
 _, out = quiet(ww.run_urls, ["https://www.youtube.com/watch?v=urlvid00001"], "ctx", args)
 check(not caption_requests(),
       f"no caption request was made for a hand-run URL ({len(caption_requests())})")
