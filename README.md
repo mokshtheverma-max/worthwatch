@@ -41,7 +41,8 @@ I built worthwatch for myself, to keep up with the YouTube channels I follow wit
   not a generic summary.
 - **Your rules are code.** Decisions you have made ("no paid ads", "never a free plan") are checked
   after the model writes. A YES that breaks one becomes a MAYBE, and the digest says why.
-- **No made-up quotes.** A quote in a write-up has to be in the transcript, or it is cut.
+- **No made-up quotes.** A quote in a write-up has to match one stretch of the transcript, word
+  for word or within a few words, or it is cut.
 - **Polite to YouTube.** Captions first, small daily limits and a gap between requests. When
   YouTube says stop, worthwatch stops and waits. It never pretends to be a browser, never uses
   your cookies, and never tries another way in.

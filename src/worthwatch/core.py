@@ -8834,7 +8834,7 @@ def people_named(text):
     return {p for p in PEOPLE_IN_CONTEXT if re.search(rf"\b{re.escape(p)}\b", scope)}
 
 
-def enforce_applies_citations(summary_text, transcript_text, haystack=None, bigrams=None):
+def enforce_applies_citations(summary_text, transcript_text, haystack=None, words=None):
     """Rebuild section 6 out of the items that survive all three tests: the quote is in the
     transcript, the item names exactly one project from the closed list, and - the part
     only the prompt can carry - the quote means something to a stranger told the project
@@ -8857,7 +8857,7 @@ def enforce_applies_citations(summary_text, transcript_text, haystack=None, bigr
                 (0, 0, False))
     start, end = bounds
     if haystack is None:
-        haystack, bigrams = transcript_index(transcript_text)
+        haystack, words = transcript_index(transcript_text)
 
     no_quote = off_list = many_projects = persons = unquoted_in_items = 0
     items, ignore_line = [], None
@@ -8873,7 +8873,7 @@ def enforce_applies_citations(summary_text, transcript_text, haystack=None, bigr
             # It is quote-checked like an item: the worst single failure in those digests
             # was a belief out of CONTEXT.md quoted back inside this line as though the
             # video had said it.
-            if ignore_line is None and line_quotes_the_video(raw, haystack, bigrams) is not False:
+            if ignore_line is None and line_quotes_the_video(raw, haystack, words) is not False:
                 ignore_line = raw.rstrip()
             continue
         m = MOST_APPLICABLE_RE.match(raw)
@@ -8882,7 +8882,7 @@ def enforce_applies_citations(summary_text, transcript_text, haystack=None, bigr
             continue                      # "nothing" carries no item and needs no counting
 
         quotes = quoted_spans(content)
-        supported = [q for q in quotes if quote_supported_by(q, haystack, bigrams)]
+        supported = [q for q in quotes if quote_supported_by(q, haystack, words)]
         if not supported:
             no_quote += 1
             continue
@@ -9693,7 +9693,10 @@ def figure_mark(how_much):
 
 def quote_position(quote, transcript_text):
     """(word index, words in the transcript) where the quote starts, or None. Exact first, then
-    the tolerant match quote_supported_by allows: most of its word pairs in a row."""
+    a looser match of its own: most of the quote's word pairs inside one window of the
+    transcript. This is the idea board's time link, an estimate; it is not the write-up's
+    quote check (summaryrules.quote_supported_by), which asks for one stretch within a few
+    different words."""
     words = canon_tokens(transcript_text or "")
     q = canon_tokens(quote or "")
     if len(q) < 3 or not words:
@@ -10868,10 +10871,10 @@ def clean_summary(summary_text, transcript_text, model=None, verdict=None, meta=
     """Every rule applied once, in order, with no model calls of its own. Returns
     (text, report)."""
     text, added_sections = ensure_judgment_sections(normalize_punct(summary_text))
-    haystack, bigrams = transcript_index(transcript_text)
+    haystack, words = transcript_index(transcript_text)
     text, invented = enforce_quotes_are_the_video(text, *document_index(transcript_text, meta))
     text, (kept, struck, checked) = enforce_applies_citations(text, transcript_text,
-                                                              haystack, bigrams)
+                                                              haystack, words)
     text, collapsed = enforce_contradictions(text)
     text, dropped_opportunity = enforce_opportunity_line(text, verdict)
     text, forced = enforce_try_this_week(text, kept, checked)

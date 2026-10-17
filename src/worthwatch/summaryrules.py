@@ -8,8 +8,9 @@ PROJECT_ALIASES, PEOPLE_IN_CONTEXT, projects_named, people_named) and section 6'
 enforce_applies_citations. core imports back every name here that it uses, so core.X still
 works, and tests/test_modules.py checks that the split stays safe.
 
-  the quote check     a double-quoted span is a claim that the video said those words, so
-                      quote_supported_by() checks it against the transcript
+  the quote check     a double-quoted span is a claim that the video said those words in a
+                      row, so quote_supported_by() checks it against ONE stretch of the
+                      transcript, never against word pairs gathered from several places
   no thinking         thinking_aloud_lines() finds a model talking to itself
   section 7           enforce_contradictions() collapses a paragraph that only explains why
                       there is no contradiction
@@ -124,34 +125,132 @@ def canon_tokens(text):
     return re.findall(r"[a-z0-9]+", text)
 
 
+# One quote, one passage. A double-quoted span is a claim that the video said those words in a
+# row, so it is checked against ONE stretch of the transcript, read in order, and never against
+# word pairs gathered from several places. Until 2026-10-16 it was: a quote passed when 80% of
+# its word pairs were somewhere in the transcript, and a quote stitched from two passages has
+# one broken pair, at the join. (Tried on real transcripts, that rule passed all 1524 fake
+# quotes cut from two to four places.) The sources are separate passages too: the transcript,
+# then the video's title, uploader and channel. PASSAGE_BREAK sits between them, no quote word
+# can equal it, and a match never runs across one.
+PASSAGE_BREAK = "|"
+
+
+def _index_of(sources):
+    """(haystack, words) for these separate sources: their words in order with a break between
+    two sources, and the same words as one string for the exact search."""
+    words = []
+    for text in sources:
+        found = canon_tokens(text)
+        if found:
+            if words:
+                words.append(PASSAGE_BREAK)
+            words.extend(found)
+    return " " + " ".join(words) + " ", words
+
+
 def transcript_index(transcript_text):
-    """(haystack, bigrams) - what quote_supported_by needs, built once per summary."""
-    words = canon_tokens(transcript_text)
-    return " " + " ".join(words) + " ", {(words[i], words[i + 1]) for i in range(len(words) - 1)}
+    """(haystack, words) - what quote_supported_by needs, built once per summary."""
+    return _index_of([transcript_text])
 
 
 def document_index(transcript_text, meta=None):
-    """The index the whole-summary quote check uses: the transcript plus the video's own
-    title and uploader. Section 1 has to be able to name the channel - "Dr. G's Lifestyle
-    Medicine Network" is a true quotation of something the video never says out loud - and
-    deleting section 1 to protect section 6 would be a worse guard than none. Section 6
-    still checks against the transcript alone."""
-    extra = " ".join(str((meta or {}).get(k) or "") for k in ("title", "uploader", "channel"))
-    return transcript_index(transcript_text + " " + extra)
+    """The index the whole-summary quote check uses: the transcript, and the video's own
+    title, uploader and channel, each a passage of its own. Section 1 has to be able to name
+    the channel - "Dr. G's Lifestyle Medicine Network" is a true quotation of something the
+    video never says out loud - and deleting section 1 to protect section 6 would be a worse
+    guard than none. Section 6 still checks against the transcript alone."""
+    return _index_of([transcript_text] + [str((meta or {}).get(k) or "")
+                                          for k in ("title", "uploader", "channel")])
 
 
-def quote_supported_by(quote, transcript_words, transcript_bigrams):
-    """Is this quote really in the transcript? Exact match on the canonical word string
-    first. Then one tolerant pass, because a model quoting a caption tends to repair its
-    grammar in passing: a quote whose consecutive word-pairs are nearly all present in the
-    transcript is still the video's own words. Below that it is an invention."""
-    words = canon_tokens(quote)
-    if len(words) < 3:
+# How many words a quote may have different from the stretch of the transcript it is matched
+# to: a changed word, a missing word and an extra word count one each. None under 8 words, then
+# one more for every 8. Picked from this tool's own transcripts and write-ups, measured on
+# 2026-10-16:
+#   by chance   A real phrase from one video was looked for in three unrelated videos, 360 times
+#               at each length. Within ONE different word it turned up 7.5% of the time at 3
+#               words, 2.2% at 4, 0.8% at 5, 0.3% at 6 and 0 of 360 at 7 words and up. So a
+#               short quote is allowed nothing. From 8 words the rule allows one, and at 8
+#               words even two different words gave 0 of 360; at 16, where it allows two, four
+#               gave 0 of 360.
+#   in use      Of 2228 quotes in the write-ups made from 2026-09-12 on, with the old check in
+#               place, 2176 (97.7%) are word for word. About 1.5% of the quotes the old rule
+#               passed are cut by this one: two real pieces joined with "...", short quotes
+#               with one word changed, and long quotes with a side remark taken out.
+WORDS_PER_DIFFERENCE = 8
+
+
+def allowed_differences(n_words):
+    return n_words // WORDS_PER_DIFFERENCE
+
+
+def stretch_differences(quote_words, words):
+    """The fewest differences between the quote and any ONE stretch of these words: a changed,
+    a missing and an extra word count one each. The stretch may start and end anywhere."""
+    n = len(quote_words)
+    column = list(range(n + 1))     # the first i words of the quote against nothing: i missing
+    fewest = n
+    for word in words:
+        step = [0]                  # a stretch may start at any word, so no words costs nothing
+        for i in range(1, n + 1):
+            step.append(min(column[i - 1] + (quote_words[i - 1] != word),
+                            column[i] + 1, step[i - 1] + 1))
+        fewest = min(fewest, step[n])
+        column = step
+    return fewest
+
+
+def _runs(words, start, end):
+    """The words from start to end, cut at every passage break: a match never crosses one."""
+    run = []
+    for word in words[max(start, 0):end]:
+        if word == PASSAGE_BREAK:
+            if run:
+                yield run
+            run = []
+        else:
+            run.append(word)
+    if run:
+        yield run
+
+
+def quote_supported_by(quote, haystack, words):
+    """Is this quote really in the transcript, as one passage? Exact match on the canonical
+    word string first. Then one tolerant pass, because a model quoting a caption tends to
+    repair its grammar in passing: the quote may differ from ONE stretch of the transcript, in
+    order, by allowed_differences() words. The differences are counted against that one
+    stretch; words and pairs from other places are never added up. Beyond that it is an
+    invention."""
+    q = canon_tokens(quote)
+    if len(q) < 3:
         return False       # two words prove nothing; they would match almost any video
-    if " " + " ".join(words) + " " in transcript_words:
+    if " " + " ".join(q) + " " in haystack:
         return True
-    pairs = [(words[i], words[i + 1]) for i in range(len(words) - 1)]
-    return bool(pairs) and sum(1 for pr in pairs if pr in transcript_bigrams) / len(pairs) >= 0.8
+    allowed = allowed_differences(len(q))
+    if not allowed:
+        return False
+    # Without reading the whole transcript for every quote: cut the quote into allowed + 1
+    # pieces. Each difference spoils at most one piece, so a stretch within the allowance holds
+    # at least one piece word for word. Find each piece exactly, then compare the quote with
+    # only the words that could belong to a stretch around it.
+    cuts = [len(q) * i // (allowed + 1) for i in range(allowed + 2)]
+    tried = set()
+    for a, b in zip(cuts, cuts[1:]):
+        piece = " " + " ".join(q[a:b]) + " "
+        at = haystack.find(piece)
+        while at >= 0:
+            # The spaces before the match are the words before it, so this is where the piece
+            # sits in `words`; the stretch can begin up to `allowed` words before where the
+            # quote's first word would be.
+            start = haystack.count(" ", 0, at) - a - allowed
+            if start not in tried:
+                tried.add(start)
+                for run in _runs(words, start, start + len(q) + 2 * allowed):
+                    if stretch_differences(q, run) <= allowed:
+                        return True
+            at = haystack.find(piece, at + 1)
+    return False
 
 
 def quoted_spans(text):
@@ -180,12 +279,12 @@ def checkable_quotes(text):
     return [q for q in quoted_spans(text) if len(canon_tokens(q)) >= 3]
 
 
-def line_quotes_the_video(line, haystack, bigrams):
+def line_quotes_the_video(line, haystack, words):
     """True, False, or None when the line quotes nothing checkable."""
     quotes = checkable_quotes(line)
     if not quotes:
         return None
-    return any(quote_supported_by(q, haystack, bigrams) for q in quotes)
+    return any(quote_supported_by(q, haystack, words) for q in quotes)
 
 
 def unquoted(text):
@@ -222,7 +321,7 @@ def thinking_aloud_lines(summary_text):
 QUOTE_EXEMPT_SECTIONS = (r"^##\s*3\b", r"^##\s*6\b", r"^##\s*7\b", r"^##\s*8\b")
 
 
-def enforce_quotes_are_the_video(summary_text, haystack, bigrams):
+def enforce_quotes_are_the_video(summary_text, haystack, words):
     """Rule 1.4. A quoted span is a claim that the video said those words, and CONTEXT.md
     is the most convincing thing a model has to hand when the video gave it nothing. So
     every quote outside the exempt sections is checked, and one that is not in the
@@ -240,7 +339,7 @@ def enforce_quotes_are_the_video(summary_text, haystack, bigrams):
     for i, raw in enumerate(lines):
         if i in exempt or HEADING_RE.match(raw) or not raw.strip():
             continue
-        bad = [q for q in checkable_quotes(raw) if not quote_supported_by(q, haystack, bigrams)]
+        bad = [q for q in checkable_quotes(raw) if not quote_supported_by(q, haystack, words)]
         for span in bad:
             lines[i] = lines[i].replace(f'"{span}"', span.strip())
             unquoted_count += 1

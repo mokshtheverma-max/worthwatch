@@ -8,6 +8,9 @@ The first public version.
   file: YES, OPPORTUNITY, MAYBE or NO, with a write-up and a daily digest.
 - Your own rules (standing decisions, things already done, generic advice, ideas you killed),
   checked in code after every write-up.
+- No made-up quotes: a quote in a write-up has to match one stretch of the transcript, in
+  order, word for word or with a few words different (none under 8 words, then one more for
+  every 8). Words stitched together from separate places are cut.
 - Captions first; the audio path (download and transcribe) is off unless you switch it on, and
   needs the `whisper` extra.
 - Polite to YouTube: limits on by default, and a refusal means wait.
