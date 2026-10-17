@@ -14,6 +14,10 @@ connection that leaves the machine).
 with time-machine from the dev extra), so a test whose fixture date will run out fails now,
 not on the day it runs out. Before any test runs, a child process and its own child (one that
 sets its own PYTHONPATH, as some suites do) must both see the new date, or nothing runs.
+
+On GitHub (GITHUB_ACTIONS is set) each failing test file is also printed as an ::error line,
+which GitHub turns into an annotation on the run's own page. Anyone can read that page and its
+API; the job's log needs a sign-in.
 """
 import datetime as dt
 import os
@@ -50,6 +54,14 @@ def moved_clock(env, when):
                             f"child {seen[1:2]}. Is time-machine installed (pip install -e "
                             f"\".[dev]\")? {proc.stderr.strip()[-300:]}")
     return env, day, None
+
+
+def github_annotation(name, tail):
+    """The line that makes GitHub show a failed test file on the run's own page, where anyone can
+    read it, and not only in the log, which needs a sign-in. The message has to be one line, with
+    %, carriage returns and line feeds written %25, %0D and %0A."""
+    message = "\n".join(tail).replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    return f"::error file=tests/{name},title={name} failed::{message}"
 
 
 def main(argv):
@@ -90,6 +102,8 @@ def main(argv):
             failed.append(path.name)
             tail = [l for l in out.splitlines() if l.strip()][-25:]
             print("\n".join("      " + l for l in tail))
+            if os.environ.get("GITHUB_ACTIONS") == "true":
+                print(github_annotation(path.name, tail))
     total = time.monotonic() - started
     print(f"\n{len(files) - len(failed)} of {len(files)} test files passed in {total:.0f}s"
           + clock_note + (f"; failed: {', '.join(failed)}" if failed else ""))

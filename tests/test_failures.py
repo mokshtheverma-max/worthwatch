@@ -938,12 +938,40 @@ check(try_lock() == "refused" and Path(ww.LOCK_PATH).read_bytes() == before,
 check(Path(ww.RECORDS_PATH).exists() == records_before, "and the refused run wrote nothing")
 
 print("  B. the run that took the lock died with the power: the next run is not blocked")
+# The lock's start time has to be on the clock the code compares it with. On Windows that is the
+# operating system's, not Python's: acquire_lock asks when the process that now owns the id
+# really started, to tell a live holder from a younger process that was given a dead one's id,
+# and Windows hands ids out again within moments. --clock moves Python's clock a year ahead, so
+# `_time.time() - 600` here put the lock's start a year after any real birth, an id that had
+# already been reused looked alive, and CI's Windows jobs failed in the clock steps now and then
+# (2026-10-16). `started`, above, is this process's own real start, on the right clock.
 dead = subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"],
                       capture_output=True, text=True).stdout.strip()
-lock_as(int(dead), _time.time() - 600, age_seconds=600)
+lock_as(int(dead), started - 600, age_seconds=600)
 check(try_lock() == "taken", "a lock from a process that has gone is cleared at once, not after "
                              "an hour")
 ww.release_lock()
+
+print("  B2. the lock's process id now belongs to a younger process: the lock is cleared")
+younger = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+try:
+    born = getattr(ww, "process_started", lambda pid: None)(younger.pid)
+    if born is None:
+        print("  (skipped: only Windows can say when a process started, so only Windows can "
+              "notice an id that was given to a younger process)")
+    else:
+        lock_as(younger.pid, born - 600, age_seconds=600)
+        check(try_lock() == "taken", "a lock whose process id now belongs to a process that "
+                                     "started after the lock did is cleared, whatever Python's "
+                                     "clock says")
+        ww.release_lock()
+        lock_as(younger.pid, born, age_seconds=5)
+        check(try_lock() == "refused", "CONTROL: the same process, when the lock says it started "
+                                       "no later than the process did, is a live holder")
+        Path(ww.LOCK_PATH).unlink(missing_ok=True)
+finally:
+    younger.kill()
+    younger.wait()
 
 print("  C. a long run is still alive after an hour: its lock is not taken from it")
 lock_as(me, started + 1, age_seconds=2 * 3600)

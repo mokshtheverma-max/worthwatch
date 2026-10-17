@@ -23,7 +23,10 @@ in it.
 
 CI also runs every test with Python's clock a year and five years ahead
 (`python tests/run_all.py --clock +365`), so a test must never give a fixture a fixed date that
-the code compares with today: count it back from today instead.
+the code compares with today: count it back from today instead. When a test file fails on
+GitHub, `run_all.py` also prints it as an `::error` line, so the run's own page lists the file
+and the last lines of its output under Annotations, where anyone can read them without signing
+in (a job's log needs a sign-in).
 
 ## Where the code lives
 
