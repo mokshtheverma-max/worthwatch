@@ -2485,17 +2485,24 @@ _RUN_CLOCK = {"deadline": None}
 
 def start_run_clock(seconds=RUN_DEADLINE_SECONDS):
     """Start this invocation's wall-clock budget. Scheduled fetching modes only."""
-    _RUN_CLOCK["deadline"] = time.monotonic() + seconds
+    now = time.monotonic()
+    _RUN_CLOCK.update(deadline=now + seconds, started=now, budget=seconds)
 
 
 def run_seconds_left():
     """Seconds this invocation may still spend, or None when no clock was started.
 
     None means a hand-run command, where you are at the terminal waiting and a scheduled run
-    you are not in has no claim on your time."""
+    you are not in has no claim on your time.
+
+    It is the budget minus the time elapsed, not the deadline minus now: Python 3.11 on Windows
+    ticks its monotonic clock every 15.6 ms, so a read just after the start can be the same
+    number, and (now + budget) - now is not always exactly the budget in floating point. It
+    came out a hair above (300.0000000000001) and a run with 300 s was told it had more."""
     if _RUN_CLOCK["deadline"] is None:
         return None
-    return max(0.0, _RUN_CLOCK["deadline"] - time.monotonic())
+    elapsed = time.monotonic() - _RUN_CLOCK["started"]
+    return max(0.0, _RUN_CLOCK["budget"] - elapsed)
 
 
 def may_start_a_summary():

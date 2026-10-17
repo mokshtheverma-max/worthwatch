@@ -200,6 +200,47 @@ ww.start_run_clock(ww.RUN_DEADLINE_SECONDS)
 check(ww.run_seconds_left() > ww.RUN_DEADLINE_SECONDS - 5, "starting the clock resets it")
 ww._RUN_CLOCK["deadline"] = None
 
+# 2026-10-16: the CONTROL check just above ("the clamp holds for a short video too") failed on
+# Windows CI with Python 3.11 (GitHub's annotation for the run). The 700 s check above it, and one
+# in test_failures.py (section 1, part C, "the triage waits no longer than the run has left"),
+# read the same number; I did not see those two fail. The run clock stored deadline = monotonic()
+# + budget and reported deadline - monotonic(). Python 3.11 on Windows ticks its monotonic clock
+# every 15.6 ms, so two reads a few microseconds apart are the same number, and (m + 300) - m is
+# not always 300 in floating point: in the 300 seconds before each power of two of the machine's
+# uptime, about one reading in four comes out a hair above it (300.0000000000001), and `<= 300`
+# fails. Those windows sit close together on a machine that has just started and far apart on a
+# desk that has been up for days. The clock now reports its budget minus the time elapsed, which
+# can never be more than the budget. This freezes it at a reading where the old arithmetic is
+# above, and checks that nothing passes the budget.
+print("\n  and the run's time left never passes its budget, even when the clock has not ticked")
+import time as _time
+frozen = next(t / 1000 for t in range(724_000, 1_024_000)
+              if (t / 1000 + 300) - t / 1000 > 300 and (t / 1000 + 700) - t / 1000 > 700)
+check((frozen + 300) - frozen > 300 and (frozen + 700) - frozen > 700,
+      f"CONTROL: at the clock reading {frozen}, 'now plus the budget, minus now' is above the "
+      f"budget in floating point ({(frozen + 300) - frozen!r} for 300)")
+real_monotonic = _time.monotonic
+reading = [frozen]
+_time.monotonic = lambda: reading[0]
+try:
+    ww.start_run_clock(700)
+    left700, t700 = ww.run_seconds_left(), ww.summary_timeout_for(51.7)[0]
+    ww.start_run_clock(300)
+    left300, t300 = ww.run_seconds_left(), ww.summary_timeout_for(17)[0]
+    reading[0] = frozen + 301
+    left_after, t_after, may_after = (ww.run_seconds_left(), ww.summary_timeout_for(17)[0],
+                                      ww.may_start_a_summary()[0])
+finally:
+    _time.monotonic = real_monotonic
+    ww._RUN_CLOCK["deadline"] = None
+check(left700 <= 700 and t700 <= 700, f"a 700 s budget: {left700!r} s left, a timeout of {t700!r} s")
+check(left300 <= 300 and t300 <= 300, f"a 300 s budget: {left300!r} s left, a timeout of {t300!r} s")
+# The floor at zero is older than today. It is pinned here because the lines around it were
+# rewritten: a timeout is cut to what is left, and urlopen refuses a negative one (ValueError).
+check(left_after == 0.0 and t_after == 0.0 and not may_after,
+      f"301 s into a 300 s budget there is nothing left, and never less than nothing: "
+      f"{left_after!r} s left, a timeout of {t_after!r} s, may start a summary: {may_after}")
+
 # ==========================================================================================
 print("\n=== E. what the brief said not to touch is untouched ===")
 check(ww.AUDIO_MAX_BYTES == 60 * 1024 * 1024, "AUDIO_MAX_BYTES")
